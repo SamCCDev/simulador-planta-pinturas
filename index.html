@@ -19,6 +19,8 @@
     --alerta:#d29922;
     --mal:#f85149;
     --ease:cubic-bezier(.23,1,.32,1);
+    --azul-hover:#2a62d6; /* 4,9:1 con blanco; #3a79f5 daba 4,0:1 */
+    --t-in:180ms; --t-out:140ms;
     color-scheme:dark;
   }
   *{box-sizing:border-box}
@@ -39,27 +41,34 @@
     gap:4px;align-items:center;padding:6px 10px}
   #marca{display:flex;flex-direction:column;line-height:1.12;margin-right:4px}
   #marca b{font-size:13.5px;color:var(--fg);white-space:nowrap}
-  #marca span{font-size:10.5px;color:var(--mu);white-space:nowrap}
+  #marca span{font-size:11.5px;color:var(--mu);white-space:nowrap}
   .sepV{width:1px;height:22px;background:var(--bd);margin:0 2px}
   .grupo{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
 
   button{font:inherit;font-size:12.5px;color:var(--fg);background:rgba(139,148,158,.12);border:1px solid var(--bd);
-    border-radius:7px;padding:4px 8px;cursor:pointer;white-space:nowrap;
+    border-radius:7px;padding:4px 7px;cursor:pointer;white-space:nowrap;
     transition:background-color .15s,border-color .15s,transform .12s var(--ease)}
-  button:hover{background:rgba(88,166,255,.18);border-color:var(--ac)}
+  @media (hover:hover) and (pointer:fine){
+    button:hover{background:rgba(88,166,255,.18);border-color:var(--ac)}
+    button.prim:hover,button.on:hover{background:var(--azul-hover)}
+    button.exito:hover{background:rgba(63,185,80,.35)}
+    .lab:hover{background:var(--azul);border-color:var(--ac);color:#fff}
+  }
   button:active{transform:scale(.97)}
   button.on{background:var(--azul);color:#fff;border-color:var(--ac);font-weight:600}
   button.prim{background:var(--azul);color:#fff;border-color:var(--ac);font-weight:600}
-  button.prim:hover{background:#3a79f5}
   button.exito{background:rgba(63,185,80,.2);border-color:var(--ok);color:#b7f5c0}
-  button.exito:hover{background:rgba(63,185,80,.35)}
   button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
     outline:2px solid var(--or);outline-offset:1px}
 
   /* Popover de ajustes rápidos */
-  #popAreas{position:fixed;top:66px;left:10px;z-index:18;width:min(320px,calc(100vw - 20px));padding:12px 14px;display:none}
-  #popAreas.open{display:block}
-  #popAreas h3{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu)}
+  /* Popovers: nacen del botón que los abre; salida más rápida que la entrada */
+  #popAreas,#popAjustes{opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-6px) scale(.97);
+    transition:opacity var(--t-out) var(--ease),transform var(--t-out) var(--ease),visibility 0s var(--t-out)}
+  #popAreas.open,#popAjustes.open{opacity:1;visibility:visible;pointer-events:auto;transform:none;
+    transition:opacity var(--t-in) var(--ease),transform var(--t-in) var(--ease),visibility 0s}
+  #popAreas{position:fixed;top:66px;left:10px;z-index:18;width:min(320px,calc(100vw - 20px));padding:12px 14px;transform-origin:top left}
+  #popAreas h2{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu)}
   #listaAreas button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin:3px 0}
   #listaAreas i{width:10px;height:10px;border-radius:50%;flex:none}
   #selArea{flex:1;min-width:0;font:600 16px/1.2 inherit;font-family:inherit;color:var(--fg);background:var(--pn-solid);border:1px solid rgba(139,148,158,.35);border-radius:6px;padding:5px 6px}
@@ -68,14 +77,13 @@
   @keyframes pulso{50%{box-shadow:0 0 0 4px rgba(88,166,255,.45)}}
   @media (prefers-reduced-motion:reduce){#bAreas.pulso{animation:none}}
   #popAjustes{position:fixed;top:66px;right:10px;z-index:18;width:min(350px,calc(100vw - 20px));
-    padding:12px 14px;display:none}
-  #popAjustes.open{display:block}
-  #popAjustes h3{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu)}
+    padding:12px 14px;transform-origin:top right}
+  #popAjustes h2{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu)}
   .presetBtn{width:100%;text-align:left;padding:8px 10px;margin:4px 0;display:flex;flex-direction:column;gap:2px;
     background:rgba(139,148,158,.08)}
   .presetBtn.on{background:rgba(88,166,255,.22);border-color:var(--ac);font-weight:400}
   .presetBtn b{font-size:12.5px}
-  .presetBtn small{font-size:11px;color:var(--mu);white-space:normal}
+  .presetBtn small{font-size:11.5px;color:var(--mu);white-space:normal}
 
   /* Resumen compacto inferior izquierdo y HUD */
   #izqAbajo{position:fixed;left:10px;bottom:10px;z-index:10;display:flex;flex-direction:column;
@@ -86,9 +94,9 @@
   #resCab b{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--mu)}
   #resGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
   .kpiBox{background:rgba(139,148,158,.08);border:1px solid var(--bd);border-radius:7px;padding:5px 7px}
-  .kpiBox span{display:block;font-size:10.5px;color:var(--mu)}
+  .kpiBox span{display:block;font-size:11.5px;color:var(--mu)}
   .kpiBox b{font-size:14px}
-  #andenesMini{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;color:var(--mu)}
+  #andenesMini{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:var(--mu)}
   .chipAnden{padding:2px 7px;border-radius:999px;border:1px solid var(--bd);background:rgba(139,148,158,.08)}
   .chipAnden.libre{border-color:rgba(63,185,80,.45);color:var(--ok)}
   .chipAnden.ocupado{border-color:rgba(240,136,62,.5);color:var(--or)}
@@ -98,22 +106,22 @@
   #hud{padding:8px 12px;font-variant-numeric:tabular-nums}
   #hud small{color:var(--mu);display:block;margin-top:2px}
   #toast{margin-top:5px;font-size:12px;color:var(--ok);display:none}
-  #toast.vis{display:block}
+  #toast.vis{display:block;animation:entra var(--t-in) var(--ease)}
+  @keyframes entra{from{opacity:0;transform:translateY(3px)}}
 
   /* Etiquetas flotantes sobre las áreas */
   #labs{position:fixed;inset:0;pointer-events:none;z-index:8}
   .lab{position:fixed;transform:translate(-50%,-50%);pointer-events:auto;border-radius:999px;
-    padding:3px 8px;font-size:11px;font-weight:600;white-space:nowrap;
+    padding:3px 8px;font-size:11.5px;font-weight:600;white-space:nowrap;
     background:rgba(19,25,33,.90);color:var(--fg);border:1px solid var(--bd);
     box-shadow:0 4px 12px rgba(0,0,0,.35)}
-  .lab:hover{background:var(--azul);border-color:var(--ac);color:#fff}
   .lab.sel{border-color:var(--or);box-shadow:0 0 0 2px rgba(240,136,62,.35)}
 
   /* Panel lateral por área */
   #pan{position:fixed;top:66px;right:10px;bottom:10px;width:min(410px,calc(100vw - 20px));z-index:15;
-    transform:translateX(110%);transition:transform .22s var(--ease);display:flex;flex-direction:column;
+    transform:translateX(110%);visibility:hidden;transition:transform var(--t-out) var(--ease),visibility 0s var(--t-out);display:flex;flex-direction:column;
     padding:12px 14px;overflow:hidden}
-  #pan.open{transform:none}
+  #pan.open{transform:none;visibility:visible;transition:transform 220ms var(--ease),visibility 0s} /* cerrado no recibe foco con Tab */
   #panCab{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
   #pt{margin:0;font-size:17px;font-weight:600}
   #tb{display:flex;gap:4px;padding:3px;background:rgba(139,148,158,.1);border-radius:8px;margin-bottom:10px}
@@ -130,14 +138,14 @@
   .campo.renglon select{width:100%}
   .archivo{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;color:var(--mu)}
   .archivo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .nota{color:var(--mu);font-size:11.5px;line-height:1.45;margin:4px 0 8px}
-  .formula{font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;margin:4px 0 8px;padding:6px 8px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);overflow-wrap:anywhere}
+  .nota{color:var(--mu);font-size:12px;line-height:1.45;margin:4px 0 8px}
+  .formula{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;line-height:1.5;margin:4px 0 8px;padding:6px 8px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);overflow-wrap:anywhere}
   .formula:empty,.aviso:empty{display:none}
-  .aviso{color:#f0883e}
+  .aviso{color:var(--or)}
   .bloqueKS h4{margin:12px 0 4px;font-size:13px}
-  .nota.ks.ok{color:#3fb950}
-  .nota.ks.err{color:#f85149}
-  table.momentos{width:100%;border-collapse:collapse;font-size:11.5px;margin:2px 0 10px}
+  .nota.ks.ok{color:var(--ok)}
+  .nota.ks.err{color:var(--mal)}
+  table.momentos{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;margin:2px 0 10px}
   table.momentos th,table.momentos td{padding:3px 6px;border-bottom:1px solid rgba(139,148,158,.2);text-align:right}
   table.momentos th:first-child,table.momentos td:first-child{text-align:left}
 
@@ -164,16 +172,27 @@
   #rs td+td{text-align:right;font-weight:600}
 
   /* Modales propios (Excel confirmación y Ayuda) */
-  .modal{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;
-    background:rgba(1,4,9,.55);padding:16px}
-  .modal.abierto{display:flex}
-  .modal .caja{width:min(510px,100%);padding:20px 22px}
+  .modal{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+    background:rgba(1,4,9,.55);padding:16px;opacity:0;visibility:hidden;
+    transition:opacity var(--t-out) var(--ease),visibility 0s var(--t-out)}
+  .modal.abierto{opacity:1;visibility:visible;transition:opacity 200ms var(--ease),visibility 0s}
+  .modal .caja{width:min(510px,100%);padding:20px 22px;transform:scale(.96);transition:transform var(--t-out) var(--ease)}
+  .modal.abierto .caja{transform:none;transition:transform 200ms var(--ease)}
   .modal h2{margin:0 0 8px;font-size:18px}
   .modal p{margin:0 0 10px;font-size:13px;color:var(--mu);line-height:1.5}
   .listaHojas{margin:10px 0 14px;padding:0;list-style:none;display:grid;gap:6px}
   .listaHojas li{padding:6px 9px;border-radius:7px;background:rgba(139,148,158,.08);
     border:1px solid var(--bd);font-size:12.5px;display:flex;justify-content:space-between;gap:8px}
   .accionesModal{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+  /* Movimiento reducido: se conservan los fundidos (indican el cambio de estado) y se quitan los desplazamientos */
+  @media (prefers-reduced-motion:reduce){
+    #popAreas,#popAjustes,.modal .caja,button:active{transform:none}
+    #pan{transform:none;opacity:0;transition:opacity var(--t-out) linear,visibility 0s var(--t-out)}
+    #pan.open{opacity:1;transition:opacity var(--t-in) linear,visibility 0s}
+    #toast.vis{animation:none}
+  }
+  ::selection{background:rgba(88,166,255,.35);color:#fff}
 
   @media (max-width:960px){
     #resumenPlanta{display:none}
@@ -234,16 +253,18 @@
 </header>
 
 <div id="popAreas" class="vidrio" role="menu" aria-label="Áreas de la planta">
-  <h3>Configurar áreas</h3>
+  <h2>Configurar áreas</h2>
   <div id="listaAreas"></div>
   <p class="nota" style="margin-top:8px">Cada área tiene su distribución de servicio, parámetros, servidores, datos CSV y resultados.</p>
 </div>
 
 <div id="popAjustes" class="vidrio">
-  <h3>Ajustes rápidos de operación</h3>
+  <h2>Ajustes rápidos de operación</h2>
   <div id="listaAjustes"></div>
   <div class="campo" style="margin-top:8px"><label for="semilla">Semilla (opcional; vacía = aleatoria)</label>
     <input id="semilla" type="number" step="1" min="0" placeholder="Ej.: 2026"></div>
+  <div class="campo"><label for="horaInicio">Hora de inicio del turno</label><select id="horaInicio"></select></div>
+  <div class="campo"><label for="cicloDia">Ciclo día/noche (apagado: hora fija)</label><input id="cicloDia" type="checkbox" checked style="width:auto;accent-color:var(--ac)"></div>
   <p class="nota" style="margin-top:8px">También puede modificar cualquier parámetro, distribución o archivo CSV en vivo desde el panel de cada área.</p>
 </div>
 
@@ -323,6 +344,7 @@
     <p>Planta completa de pinturas de <b>American Chemical S.R.L.</b> con 9 áreas conectadas desde recepción y dispersión hasta despacho en andenes, caseta de entrada y báscula de salida.</p>
     <p><b>Parámetros:</b> el botón <b>Parámetros</b> de la barra superior (o «Configurar áreas» en el resumen) abre la lista de las 9 áreas; el selector de arriba del panel pasa de un área a otra sin cerrarlo.</p>
     <p><b>Conducir:</b> en <b>Recorrer</b>, la tecla <b>F</b> (o el botón «Traer montacargas») hace aparecer un montacargas propio frente a usted, dentro de la nave; si ya existe, lo trae de vuelta. En el patio hay además un camión de reserva. Acérquese y presione <b>E</b> para subir; W/S acelera, frena y da marcha atrás, A/D gira, y <b>E</b> lo baja. Estos vehículos no forman parte de la simulación: el montacargas de trabajo sigue operando solo y lo espera si usted le bloquea el paso.</p>
+    <p><b>Día y noche:</b> el reloj de la simulación mueve el sol, el cielo y la niebla; de noche se encienden las luces de la nave, los postes del patio, las ventanas y los faros. En <b>Ajustes rápidos</b> elija la hora de inicio del turno o apague el ciclo para dejar una hora fija. La hora del día aparece entre paréntesis en el reloj. Es sólo visual: no cambia la simulación.</p>
     <p><b>Navegación:</b> Use <b>Exterior</b> (arrastre para girar, rueda para acercar), <b>En planta</b> (cámara cenital sin techo), <b>Quitar techo</b> o <b>Recorrer</b> (camine con <b>WASD</b> o las flechas, mire con el ratón y presione <b>E</b> para abrir el panel del área donde se encuentre).</p>
     <p><b>Datos CSV y distribuciones:</b> Haga clic en cualquier área para abrir su panel, elegir la distribución estadística (Normal, Triangular, Lognormal, Exponencial, Uniforme, Weibull, Erlang/Gamma o Datos cargados) y pegar o cargar archivos <b>.csv</b> o <b>.txt</b> con validación automática. Los generadores siguen la Tabla 3.18: el panel muestra la fórmula con los valores actuales y, en la pestaña Distribuciones, la media, la varianza, la asimetría y la curtosis de la muestra frente a las teóricas. En la lognormal se ingresan la media y la varianza del tiempo.</p>
     <p><b>Ejemplos del catálogo:</b> el selector del panel carga las variables del catálogo de American Chemical (báscula, andén, llenado de tambor, TTR, TBF, tránsito y etapas de envasado). Muchas están en otra escala que las áreas, que atienden una paleta por servicio en unos 2 minutos, así que el panel avisa cuando el área se satura (ρ ≥ 1). Por eso los valores por defecto de las áreas siguen balanceados.</p>
@@ -1311,7 +1333,7 @@ G.environment = (() => {
   return t;
 })();
 
-G.add(new THREE.HemisphereLight(0xdfeeff, 0x5d5848, 0.3));
+const hemi = new THREE.HemisphereLight(0xdfeeff, 0x5d5848, 0.3); G.add(hemi);
 const sol = new THREE.DirectionalLight(0xfff0dc, 1.55);
 sol.position.set(-40, 82, 55);
 sol.castShadow = true;
@@ -1423,6 +1445,21 @@ const MAT = {
 };
 TX.panel.repeat.set(14, 1);
 const usar = c => (c && c.isMaterial) ? c : M(c);
+// Materiales que se encienden de noche (emisivos: no suman luces reales). Los gobierna actualizarCielo().
+const MAT_FAROL = MS({ color:0xeeeeee, emissive:0xffd58a, emissiveIntensity:0.15, roughness:0.3 });
+const MAT_VENTANA = M(0x9fd3e6, { emissive:0xffd98a, emissiveIntensity:0 });
+const MAT_LAMPARA = MS({ color:0xdddddd, emissive:0xfff3d6, emissiveIntensity:0.2, roughness:0.4 });
+const MAT_FARO = MS({ color:0xfff4c8, emissive:0xfff4c8, emissiveIntensity:0, roughness:0.2 });
+const TX_HALO = (() => { // degradado radial para los charcos de luz en el piso
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.5, "rgba(255,255,255,.45)"); gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c);
+})();
+const haloMat = color => new THREE.MeshBasicMaterial({ map:TX_HALO, color, transparent:true, opacity:0, depthWrite:false,
+  blending:THREE.AdditiveBlending, polygonOffset:true, polygonOffsetFactor:-2 });
+const MAT_HALO_POSTE = haloMat(0xffcf80), MAT_HAZ = haloMat(0xfff0c8);
+const GEO_HAZ = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
 
 // Sombras sólo en lo que importa: piezas pequeñas no proyectan (cast === true las fuerza)
 function B(w, h, d, c, x, y, z, g, cast){
@@ -1518,6 +1555,9 @@ function fundir(partes){
 }
 const caja = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
 const cil = (r1, r2, h, x, y, z, seg) => new THREE.CylinderGeometry(r1, r2, h, seg || 12).translate(x, y, z);
+// faros: un poco por delante de los del cuerpo para que el emisivo no pelee en profundidad con ellos
+const GEO_FAROS_CAMION = fundir([-0.82, 0.82].map(x => [caja(0.42, 0.22, 0.05, x, 1.25, 4.27), 0xffffff]));
+const GEO_FAROS_FK = fundir([-0.42, 0.42].map(x => [caja(0.16, 0.12, 0.06, x, 2.45, 0.66), 0xffffff]));
 const esf = (r, x, y, z, sy) => new THREE.SphereGeometry(r, 14, 10).scale(1, sy || 1, 1).translate(x, y, z);
 function malla(geo, mat, g, cast){
   const m = new THREE.Mesh(geo, mat);
@@ -1779,7 +1819,7 @@ for (let i = 0; i < 8; i++){
   const x = 19 + i * 7.8;
   [-1, 1].forEach(s => {
     [21.25, 20.75].forEach(oz => {
-      B(3.0, 1.8, 0.1, 0x9fd3e6, x, 3.7, s * oz);
+      B(3.0, 1.8, 0.1, MAT_VENTANA, x, 3.7, s * oz);
       B(3.2, 0.14, 0.18, 0x4b5560, x, 2.75, s * oz);
     });
   });
@@ -1788,7 +1828,7 @@ for (let j = 0; j < 4; j++){
   const z = -15 + j * 10;
   if (Math.abs(z) < 3) continue;
   [80.25, 79.75].forEach(ox => {
-    B(0.1, 1.8, 3.0, 0x9fd3e6, ox, 3.7, z);
+    B(0.1, 1.8, 3.0, MAT_VENTANA, ox, 3.7, z);
     B(0.18, 0.14, 3.2, 0x4b5560, ox, 2.75, z);
   });
 }
@@ -1840,6 +1880,8 @@ for (let x = 20; x <= 74; x += 9){ // extractores eólicos en la cumbrera
   IY(0.35, 0.5, MAT.acero, x, 10.95, 0);
   inst(new THREE.SphereGeometry(1, 12, 8), MAT.acero, x, 11.35, 0, 0.5, 0.42, 0.5);
 }
+// luminarias colgantes de la nave (emisivas; de noche iluminan junto con las dos luces interiores)
+for (let x = 20; x <= 74; x += 9) for (const z of [-14, -5, 5, 14]) IB(1.4, 0.08, 0.35, MAT_LAMPARA, x, 6.05, z);
 volcarInstancias(roof);
 
 // ---------- Fachada: pilares, zócalo, canaletas, bajantes, portones seccionales, abrigos de andén, marquesina ----------
@@ -1858,7 +1900,7 @@ portones.forEach(m => m.material = MAT_PORTON);
 DOCK_Z.forEach(z => {
   IB(0.7, 5.4, 0.5, MAT.goma, 13.6, 2.7, z + 4.55); IB(0.7, 5.4, 0.5, MAT.goma, 13.6, 2.7, z - 4.55);
   IB(0.7, 0.7, 9.6, MAT.goma, 13.6, 5.1, z);
-  IB(0.1, 0.2, 0.1, MS({ color:0xfff4c8, emissive:0x887744 }), 13.5, 5.7, z + 3.8); // luz de andén
+  IB(0.1, 0.2, 0.1, MAT_FAROL, 13.5, 5.7, z + 3.8); // luz de andén
 });
 B(4.6, 0.22, 2.4, 0xc3c9cd, 21, 3.95, 22.6, G, true); // marquesina de la entrada de personal
 [19.1, 22.9].forEach(x => IY(0.08, 3.9, MAT.aceroOsc, x, 1.95, 23.6));
@@ -2003,12 +2045,16 @@ arboles.forEach(([x, z], k) => {
   imCopa.setColorAt(k, _cCopa.setHSL(0.25 + PRNG() * 0.07, 0.35 + PRNG() * 0.15, 0.24 + PRNG() * 0.1));
 });
 [imTronco, imCopa].forEach(m => { m.castShadow = m.receiveShadow = true; m.frustumCulled = false; G.add(m); });
-// postes de alumbrado
-[[-60, 20], [-40, 20], [-20, 20], [-60, -40], [-40, -40], [-20, -40], [0, 30], [0, -40], [30, 48], [50, 48], [70, 48], [100 - 6, 0], [-70, -10]].forEach(([x, z]) => {
+// postes de alumbrado: luminaria emisiva y charco de luz en el piso (sin luces reales)
+const POSTES_LUZ = [[-60, 20], [-40, 20], [-20, 20], [-60, -40], [-40, -40], [-20, -40], [0, 30], [0, -40], [30, 48], [50, 48], [70, 48], [100 - 6, 0], [-70, -10]];
+const imHalo = new THREE.InstancedMesh(GEO_HAZ, MAT_HALO_POSTE, POSTES_LUZ.length);
+POSTES_LUZ.forEach(([x, z], k) => {
   IY(0.12, 8, MAT.aceroOsc, x, 4, z);
   IB(1.6, 0.1, 0.12, MAT.aceroOsc, x + 0.7, 7.9, z);
-  IB(0.6, 0.15, 0.3, MS({ color:0xeeeeee, emissive:0x333322, roughness:0.3 }), x + 1.4, 7.82, z);
+  IB(0.6, 0.15, 0.3, MAT_FAROL, x + 1.4, 7.82, z);
+  _o3.position.set(x + 1.4, 0.06, z); _o3.rotation.set(0, 0, 0); _o3.scale.set(13, 1, 13); _o3.updateMatrix(); imHalo.setMatrixAt(k, _o3.matrix);
 });
+imHalo.frustumCulled = false; imHalo.renderOrder = 1; G.add(imHalo);
 // señales viales
 function senal(txt, x, z, ry, fondo){
   IY(0.05, 2.3, MAT.aceroOsc, x, 1.15, z);
@@ -2433,6 +2479,9 @@ const Escena = {
       return fundir(p);
     });
     malla(cuerpo, MAT_VC_MET, g);
+    // faros que se encienden de noche y su haz en el piso
+    malla(GEO_FAROS_CAMION, MAT_FARO, g, false);
+    const haz = new THREE.Mesh(GEO_HAZ, MAT_HAZ); haz.scale.set(4, 1, 9); haz.position.set(0, 0.07, 8.6); haz.renderOrder = 1; g.add(haz);
     // furgón: color del producto con nervaduras (textura) y puertas traseras
     malla(new THREE.BoxGeometry(2.6, 2.8, 6.8).translate(0, 2.45, -2.75), matFurgon(c.prod.color), g);
     malla(caja(2.3, 1.0, 0.06, 0, 2.55, 3.0).rotateX(-0.22), M(0x9fd3e6), g, false); // parabrisas
@@ -2536,6 +2585,8 @@ function crearMontacargas(idx){
   malla(fijo, MAT_VC_MET, g);
   const baliza = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.14, 10), MS({ color:0xff7a00, emissive:0x662200, roughness:0.3 }));
   baliza.position.set(0, 2.72, -0.6); g.add(baliza);
+  malla(GEO_FAROS_FK, MAT_FARO, g, false);
+  const haz = new THREE.Mesh(GEO_HAZ, MAT_HAZ); haz.scale.set(2.4, 1, 5); haz.position.set(0, 0.07, 4.2); haz.renderOrder = 1; g.add(haz);
   // operador sentado con casco y uniforme AC
   const dv = persona({ chaleco:0xf28c28, casco:0xf2c230 });
   dv.position.set(0, 0.42, -0.42);
@@ -3706,6 +3757,51 @@ addEventListener("click", () => Snd.asegurar(), { once:true });
 /* =========================================================================
    11. BUCLE PRINCIPAL DE RENDER Y SIMULACIÓN
    ========================================================================= */
+/* ---------- Día y noche: el reloj de la simulación mueve el sol (sólo visual; no toca la lógica) ---------- */
+let HORA_INICIO = 8, CICLO_DIA = true, _ultH = -1, _ultD = -1;
+const horaDia = () => CICLO_DIA ? (HORA_INICIO + T / 60) % 24 : HORA_INICIO;
+const fmtHoraDia = h => String(Math.floor(h)).padStart(2, "0") + ":" + String(Math.floor(h % 1 * 60)).padStart(2, "0");
+const CIELO = { dia:["#3f7fc0", "#8fb9de", "#d6e3ea"], ocaso:["#33406e", "#d98a62", "#f3bf86"], noche:["#03060d", "#0b1322", "#18202d"] };
+const _cA = new THREE.Color(), _cB = new THREE.Color(), _cC = new THREE.Color(), _dirSol = new THREE.Vector3();
+const COL = { sol:new THREE.Color(0xfff0dc), ocaso:new THREE.Color(0xff9a52), luna:new THREE.Color(0x8ea6ff),
+  hemiDia:new THREE.Color(0xdfeeff), hemiNoche:new THREE.Color(0x3a4a70) };
+const suave = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function mezclaCielo(k, d, tw){ return _cA.set(CIELO.dia[k]).lerp(_cB.set(CIELO.ocaso[k]), tw).lerp(_cC.set(CIELO.noche[k]), 1 - d); }
+function actualizarCielo(forzar){
+  const h = horaDia();
+  if (!forzar && Math.abs(h - _ultH) < 0.02) return;
+  _ultH = h;
+  const ang = Math.PI * (h - 6) / 12, el = Math.sin(ang);         // el: seno de la altura del sol (1 al mediodía, −1 a medianoche)
+  const d = suave(-0.1, 0.22, el), n = 1 - d;                       // d: cuánto es de día
+  const tw = Math.max(0, 1 - Math.abs(el - 0.04) / 0.32);           // tw: luz de amanecer o atardecer
+  // de día el sol recorre de este (+x) a oeste (−x); de noche ilumina la luna desde la posición opuesta
+  const s = el >= -0.05 ? 1 : -1;
+  _dirSol.set(s * Math.cos(ang), Math.max(0.2, s * el), 0.45).normalize();
+  sol.position.copy(_dirSol).multiplyScalar(110);
+  sol.intensity = 1.55 * d + 0.3 * n;
+  sol.color.copy(COL.sol).lerp(COL.ocaso, tw).lerp(COL.luna, n);
+  hemi.intensity = 0.3 * d + 0.2 * n; hemi.color.copy(COL.hemiDia).lerp(COL.hemiNoche, n);
+  luzInt1.intensity = luzInt2.intensity = 0.35 + 0.45 * n;
+  rd.toneMappingExposure = 0.9 + 0.2 * n;
+  // cielo y niebla
+  const cv = G.background.image, g = cv.getContext("2d"), gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, "#" + mezclaCielo(0, d, tw).getHexString()); gr.addColorStop(0.6, "#" + mezclaCielo(1, d, tw).getHexString());
+  const hor = mezclaCielo(2, d, tw); gr.addColorStop(1, "#" + hor.getHexString());
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256); G.background.needsUpdate = true;
+  G.fog.color.copy(hor);
+  // luces emisivas: postes, ventanas, luminarias de la nave, faros
+  MAT_FAROL.emissiveIntensity = 0.15 + 1.7 * n;
+  MAT_VENTANA.emissiveIntensity = 0.9 * n;
+  MAT_LAMPARA.emissiveIntensity = 0.2 + 1.4 * n;
+  MAT_FARO.emissiveIntensity = 2.2 * n;
+  MAT_HALO_POSTE.opacity = 0.5 * n; MAT_HAZ.opacity = 0.35 * n;
+  // los reflejos del cielo (IBL) se apagan de noche; recorrer la escena sólo cuando cambia de verdad
+  if (forzar || Math.abs(d - _ultD) > 0.03){
+    _ultD = d;
+    G.traverse(o => { if (o.material && o.material.isMeshStandardMaterial) o.material.envMapIntensity = 0.25 + 0.75 * d; });
+  }
+}
+
 function fmtReloj(t){ return Math.floor(t / 60) + " h " + String(Math.floor(t % 60)).padStart(2, "0") + " min"; }
 
 const V = new THREE.Vector3();
@@ -3908,7 +4004,8 @@ function frame(now){
 
   const wip = S.slice(0, 7).reduce((n, s) => n + s.q.length + s.b, 0);
   const ai = mode === "walk" ? areaAt() : -1;
-  $("hudMain").textContent = "Reloj: " + fmtReloj(T) + " · Paletas despachadas: " + S[6].dn + " · Camiones: " + camionesDespachados + " · En proceso: " + wip;
+  actualizarCielo();
+  $("hudMain").textContent = "Reloj: " + fmtReloj(T) + " (" + fmtHoraDia(horaDia()) + ") · Paletas despachadas: " + S[6].dn + " · Camiones: " + camionesDespachados + " · En proceso: " + wip;
   const vc = mode === "walk" && !conducido ? vehiculoCercano() : null;
   $("bFork").hidden = mode !== "walk" || !!conducido;
   $("hudHelp").textContent = conducido
@@ -3931,7 +4028,11 @@ function frame(now){
 }
 
 construirAjustesRapidos();
+for (let h = 0; h < 24; h++) $("horaInicio").appendChild(el("option", { txt:fmtHoraDia(h), attrs:Object.assign({ value:h }, h === HORA_INICIO ? { selected:"selected" } : {}) }));
+$("horaInicio").onchange = e => { HORA_INICIO = +e.target.value; actualizarCielo(true); };
+$("cicloDia").onchange = e => { CICLO_DIA = e.target.checked; actualizarCielo(true); };
 resetSim();
+actualizarCielo(true);
 actualizarResumenPlanta();
 requestAnimationFrame(frame);
 </script>
