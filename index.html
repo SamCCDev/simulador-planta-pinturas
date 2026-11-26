@@ -57,6 +57,16 @@
     outline:2px solid var(--or);outline-offset:1px}
 
   /* Popover de ajustes rápidos */
+  #popAreas{position:fixed;top:66px;left:10px;z-index:18;width:min(320px,calc(100vw - 20px));padding:12px 14px;display:none}
+  #popAreas.open{display:block}
+  #popAreas h3{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu)}
+  #listaAreas button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin:3px 0}
+  #listaAreas i{width:10px;height:10px;border-radius:50%;flex:none}
+  #selArea{flex:1;min-width:0;font:600 16px/1.2 inherit;font-family:inherit;color:var(--fg);background:var(--pn-solid);border:1px solid rgba(139,148,158,.35);border-radius:6px;padding:5px 6px}
+  #bAreas{font-weight:700}
+  #bAreas.pulso{animation:pulso 1.2s ease-in-out 4}
+  @keyframes pulso{50%{box-shadow:0 0 0 4px rgba(88,166,255,.45)}}
+  @media (prefers-reduced-motion:reduce){#bAreas.pulso{animation:none}}
   #popAjustes{position:fixed;top:66px;right:10px;z-index:18;width:min(350px,calc(100vw - 20px));
     padding:12px 14px;display:none}
   #popAjustes.open{display:block}
@@ -115,6 +125,11 @@
   .campo input,.campo select{width:128px;font:inherit;color:var(--fg);background:var(--pn-solid);
     border:1px solid var(--bd);border-radius:6px;padding:4px 7px}
   .campo input:disabled{opacity:.55;cursor:not-allowed}
+  .campo.renglon{display:block}
+  .campo.renglon label{display:block;margin-bottom:4px}
+  .campo.renglon select{width:100%}
+  .archivo{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;color:var(--mu)}
+  .archivo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .nota{color:var(--mu);font-size:11.5px;line-height:1.45;margin:4px 0 8px}
   .formula{font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;margin:4px 0 8px;padding:6px 8px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);overflow-wrap:anywhere}
   .formula:empty,.aviso:empty{display:none}
@@ -189,8 +204,9 @@
     <span>Planta de pinturas · Simulación 3D</span>
   </div>
   <div class="grupo">
+    <button id="bAreas" class="prim" title="Elegir un área y configurar sus parámetros" aria-haspopup="menu">Parámetros</button>
     <button id="bE" class="on">Exterior</button>
-    <button id="bP">Vista en planta</button>
+    <button id="bP" title="Vista en planta (cenital, sin techo)">En planta</button>
     <button id="bW">Recorrer</button>
     <button id="bR">Quitar techo</button>
   </div>
@@ -201,7 +217,7 @@
     <button data-s="5">5x</button>
     <button data-s="20">20x</button>
     <button data-s="60">60x</button>
-    <button id="b8h" title="Avanza 480 minutos (8 horas) de forma continua">Simular turno de 8 h</button>
+    <button id="b8h" title="Avanza 480 minutos (8 horas) de forma continua">Turno de 8 h</button>
     <button id="bRe">Reiniciar</button>
   </div>
   <span style="flex:1"></span>
@@ -213,6 +229,12 @@
     <button id="bAyuda" title="Instrucciones de uso">?</button>
   </div>
 </header>
+
+<div id="popAreas" class="vidrio" role="menu" aria-label="Áreas de la planta">
+  <h3>Configurar áreas</h3>
+  <div id="listaAreas"></div>
+  <p class="nota" style="margin-top:8px">Cada área tiene su distribución de servicio, parámetros, servidores, datos CSV y resultados.</p>
+</div>
 
 <div id="popAjustes" class="vidrio">
   <h3>Ajustes rápidos de operación</h3>
@@ -226,6 +248,7 @@
   <section id="resumenPlanta" class="vidrio">
     <div id="resCab">
       <b>Estado de planta y despacho</b>
+      <button id="bConfAreas" class="enlace" style="padding:2px 8px;font-size:11px">Configurar áreas</button>
       <button id="bToggleRes" style="padding:2px 8px;font-size:11px">Ocultar</button>
     </div>
     <div id="resCuerpo">
@@ -248,7 +271,8 @@
 
 <aside id="pan" class="vidrio" aria-label="Panel del área">
   <div id="panCab">
-    <h2 id="pt">Área</h2>
+    <h2 id="pt" hidden>Área</h2>
+    <select id="selArea" aria-label="Área a configurar"></select>
     <button id="px" aria-label="Cerrar panel">Cerrar</button>
   </div>
   <div id="tb" role="tablist">
@@ -293,7 +317,8 @@
   <div class="caja vidrio">
     <h2 id="titAyuda">Guía rápida del simulador</h2>
     <p>Planta completa de pinturas de <b>American Chemical S.R.L.</b> con 9 áreas conectadas desde recepción y dispersión hasta despacho en andenes, caseta de entrada y báscula de salida.</p>
-    <p><b>Navegación:</b> Use <b>Exterior</b> (arrastre para girar, rueda para acercar), <b>Vista en planta</b> (cámara cenital sin techo), <b>Quitar techo</b> o <b>Recorrer</b> (camine con <b>WASD</b> o las flechas, mire con el ratón y presione <b>E</b> para abrir el panel del área donde se encuentre).</p>
+    <p><b>Parámetros:</b> el botón <b>Parámetros</b> de la barra superior (o «Configurar áreas» en el resumen) abre la lista de las 9 áreas; el selector de arriba del panel pasa de un área a otra sin cerrarlo.</p>
+    <p><b>Navegación:</b> Use <b>Exterior</b> (arrastre para girar, rueda para acercar), <b>En planta</b> (cámara cenital sin techo), <b>Quitar techo</b> o <b>Recorrer</b> (camine con <b>WASD</b> o las flechas, mire con el ratón y presione <b>E</b> para abrir el panel del área donde se encuentre).</p>
     <p><b>Datos CSV y distribuciones:</b> Haga clic en cualquier área para abrir su panel, elegir la distribución estadística (Normal, Triangular, Lognormal, Exponencial, Uniforme, Weibull, Erlang/Gamma o Datos cargados) y pegar o cargar archivos <b>.csv</b> o <b>.txt</b> con validación automática. Los generadores siguen la Tabla 3.18: el panel muestra la fórmula con los valores actuales y, en la pestaña Distribuciones, la media, la varianza, la asimetría y la curtosis de la muestra frente a las teóricas. En la lognormal se ingresan la media y la varianza del tiempo.</p>
     <p><b>Ejemplos del catálogo:</b> el selector del panel carga las variables del catálogo de American Chemical (báscula, andén, llenado de tambor, TTR, TBF, tránsito y etapas de envasado). Muchas están en otra escala que las áreas, que atienden una paleta por servicio en unos 2 minutos, así que el panel avisa cuando el área se satura (ρ ≥ 1). Por eso los valores por defecto de las áreas siguen balanceados.</p>
     <p><b>Falla del montacargas (ajuste 5):</b> el tiempo entre fallas sigue una Weibull con la forma del catálogo (α = 1,6), pero con escala β = 45 min en lugar de 180 h, y la reparación sigue una exponencial de media 19 min en lugar de 2,86 h. Se reescaló porque, con los valores del catálogo, la media entre fallas es de 161 h y en un turno de 8 h el montacargas casi nunca fallaría, de modo que el escenario no mostraría la contingencia.</p>
@@ -1456,6 +1481,29 @@ const PIEL = [0xc69a7a, 0x9c6b4e, 0xe0b899, 0x7a5038, 0xb5835f];
 const UNIF = 0x1f3b63, PANT = 0x26324a, BOTA = 0x2b211b, REFL = 0xd9dee2;
 const _geoPersona = new Map();
 function geoPersona(clave, crear){ if (!_geoPersona.has(clave)) _geoPersona.set(clave, crear()); return _geoPersona.get(clave); }
+// Chaleco con la marca: logo AC en la espalda y en el pecho. Una textura compartida por color (sin mallas extra).
+// En el cilindro del chaleco, u = 0 es el frente (+z) y u = 0,5 la espalda.
+const _texChal = new Map();
+function texChaleco(hex){
+  if (_texChal.has(hex)) return _texChal.get(hex);
+  const c = document.createElement("canvas"); c.width = 512; c.height = 192;
+  const g = c.getContext("2d"), col = "#" + hex.toString(16).padStart(6, "0");
+  g.fillStyle = col; g.fillRect(0, 0, 512, 192);
+  // franjas reflectivas a 1,20 y 1,38 m (v = 0,27 y 0,68), interrumpidas donde va el logo de la espalda
+  g.fillStyle = "#d9dee2";
+  [61, 140].forEach(y => { g.fillRect(0, y - 8, 186, 16); g.fillRect(326, y - 8, 186, 16); });
+  const logo = (x, y, r, texto) => {
+    g.fillStyle = "#1f4f9a"; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "#f2a900"; g.lineWidth = r * 0.12; g.beginPath(); g.arc(x, y, r * 0.84, -0.6, 2.2); g.stroke();
+    g.fillStyle = "#ffffff"; g.font = "bold " + Math.round(r * 0.9) + "px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("AC", x, y + r * 0.05);
+    if (texto){ g.fillStyle = "#1f3b63"; g.font = "bold 12px sans-serif"; g.fillText("AMERICAN", x, y + r + 14); g.fillText("CHEMICAL", x, y + r + 28); }
+  };
+  logo(256, 78, 46, true);   // espalda
+  logo(468, 70, 17, false);  // pecho
+  const t = new THREE.CanvasTexture(c); t.anisotropy = ANISO;
+  _texChal.set(hex, t);
+  return t;
+}
 // op: { chaleco, casco (color o null), barbijo, piel }
 function persona(op){
   const piel = op.piel != null ? op.piel : PIEL[(PRNG() * PIEL.length) | 0];
@@ -1464,7 +1512,7 @@ function persona(op){
   // [0] chaleco: material propio, su color indica el estado (naranja trabaja, gris libre)
   const chaleco = malla(geoPersona("chal", () =>
     new THREE.CylinderGeometry(0.205, 0.165, 0.44, 14).scale(1, 1, 0.68).translate(0, 1.3, 0)),
-    MS({ color:op.chaleco, roughness:0.6 }), g);
+    MS({ color:0xffffff, map:texChaleco(op.chaleco), roughness:0.6 }), g);
   // [1] y [2] brazos con pivote en el hombro
   const brazo = geoPersona("brazo" + piel, () => fundir([
     [cil(0.058, 0.048, 0.58, 0, -0.29, 0, 8), UNIF],
@@ -1481,8 +1529,6 @@ function persona(op){
       [cil(0.195, 0.158, 0.58, 0, 1.27, 0, 14).scale(1, 1, 0.64), UNIF],
       [cil(0.05, 0.055, 0.1, 0, 1.6, 0, 8), piel],
       [esf(0.1, 0, 1.72, 0, 1.15), piel],
-      [cil(0.207, 0.2, 0.04, 0, 1.2, 0, 14).scale(1, 1, 0.69), REFL],
-      [cil(0.21, 0.2, 0.04, 0, 1.38, 0, 14).scale(1, 1, 0.69), REFL],
       [caja(0.05, 0.022, 0.02, -0.04, 1.745, 0.093), 0x1a1a1a], // cejas/ojos insinuados
       [caja(0.05, 0.022, 0.02, 0.04, 1.745, 0.093), 0x1a1a1a]
     ];
@@ -2643,7 +2689,7 @@ function animarForks(dt){
 function animarOperarios(dt, tm){
   AR.forEach((a, i) => {
     const busy = S[i].b;
-    WS[i].torso.forEach((m, j) => m.material.color.setHex(j < busy ? 0xf28c28 : 0x8aa0ae));
+    WS[i].torso.forEach((m, j) => { const t = texChaleco(j < busy ? 0xf28c28 : 0x8aa0ae); if (m.material.map !== t) m.material.map = t; });
     WS[i].p.forEach((p, j) => {
       const on = j < busy;
       const pts = ptsOf(i, j);
@@ -2942,6 +2988,16 @@ $("px").onclick = () => {
   cur = -1;
 };
 
+// Acceso visible a los parámetros: botón «Parámetros», selector de área en el panel y enlace en el resumen.
+function construirListaAreas(){
+  $("listaAreas").replaceChildren(...AR.map((a, i) => {
+    const b = el("button", null, el("i", { attrs:{ style:"background:#" + a.k.toString(16).padStart(6, "0") } }), el("span", { txt:(i + 1) + ". " + a.n }));
+    b.onclick = () => { $("popAreas").classList.remove("open"); openPanel(i); };
+    return b;
+  }));
+  $("selArea").replaceChildren(...AR.map((a, i) => el("option", { txt:(i + 1) + ". " + a.n, attrs:{ value:String(i) } })));
+}
+function abrirListaAreas(){ $("popAjustes").classList.remove("open"); $("popAreas").classList.toggle("open"); }
 function openPanel(i){
   const cambioArea = cur !== i;
   cur = i;
@@ -2953,6 +3009,7 @@ function openPanel(i){
   AR.forEach((ar, idx) => ar.el.classList.toggle("sel", idx === i));
   $("pan").classList.add("open");
   $("pt").textContent = a.n;
+  $("selArea").value = String(i);
   construirPestanaParametros(i);
   drawPanel();
 }
@@ -3094,7 +3151,7 @@ function construirPestanaParametros(i){
     mostrarToast("Ejemplo cargado: " + c.nombre + (c.unidad !== "min" ? " (el simulador lo usa en minutos)." : "."));
     selCat.value = "";
   };
-  p0.insertBefore(el("div", { cls:"campo" }, el("label", { txt:"Ejemplos del catálogo (Tabla 3.18)" }), selCat), bloqueDist);
+  p0.insertBefore(el("div", { cls:"campo renglon" }, el("label", { txt:"Ejemplos del catálogo (Tabla 3.18)" }), selCat), bloqueDist);
   syncExpLock();
   selDist.onchange = () => {
     a.dist = selDist.value;
@@ -3113,8 +3170,14 @@ function construirPestanaParametros(i){
   ta.value = (a.emp || []).slice(0, 500).join(" ");
   bloqueCSV.appendChild(ta);
 
-  const fileInp = el("input", { id:"ef", attrs:{ type:"file", accept:".txt,.csv" } });
+  // input de archivo oculto con botón y nombre en español (el control nativo sale en el idioma del navegador)
+  const fileInp = el("input", { id:"ef", attrs:{ type:"file", accept:".txt,.csv", hidden:"" } });
+  const nomArch = el("span", { txt:"Ningún archivo seleccionado" });
+  const btnArch = el("button", { txt:"Elegir archivo", attrs:{ type:"button" } });
+  btnArch.onclick = () => fileInp.click();
+  fileInp.addEventListener("change", () => { const f = fileInp.files && fileInp.files[0]; nomArch.textContent = f ? f.name : "Ningún archivo seleccionado"; });
   bloqueCSV.appendChild(fileInp);
+  bloqueCSV.appendChild(el("div", { cls:"archivo" }, btnArch, nomArch));
 
   const selCol = el("select", { id:"csvCol" });
   const colRow = el("div", { id:"csvColRow" }, el("label", { txt:"Columna numérica:", attrs:{ for:"csvCol" } }), selCol);
@@ -3435,7 +3498,18 @@ function aplicarAjuste(id){
   mostrarToast("Ajuste aplicado: " + aj.nombre + ".");
 }
 
-$("bAj").onclick = () => $("popAjustes").classList.toggle("open");
+$("bAj").onclick = () => { $("popAreas").classList.remove("open"); $("popAjustes").classList.toggle("open"); };
+construirListaAreas();
+$("bAreas").onclick = abrirListaAreas;
+$("bConfAreas").onclick = abrirListaAreas;
+$("selArea").onchange = e => openPanel(+e.target.value);
+// aviso de la primera visita (se recuerda en este navegador; si el almacenamiento falla, se muestra igual)
+(() => {
+  let visto = false;
+  try { visto = localStorage.getItem("ac_aviso_parametros") === "1"; localStorage.setItem("ac_aviso_parametros", "1"); } catch (e) {}
+  if (visto) return;
+  setTimeout(() => { mostrarToast("Configure cada área desde el botón Parámetros."); $("bAreas").classList.add("pulso"); }, 1500);
+})();
 $("semilla").onchange = e => {
   const v = e.target.value.trim(), n = parseInt(v, 10);
   SEMILLA = v === "" || Number.isNaN(n) ? null : n >>> 0;
