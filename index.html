@@ -878,19 +878,16 @@ function onDespachoPalletDone(){
 
 function consumirPaletasParaCamion(c){
   const N = CFG.paletasPorCamion;
-  while (paletasListasDespacho > 0 && (c.paletas + c.paletasEnCamino) < N){
+  // La simulación cuenta la paleta como cargada al despacharla. El viaje del montacargas es sólo
+  // acompañamiento visual y, si va atrasado (más de 3 viajes pendientes), se salta viajes.
+  // (Corrige un defecto de la v1: el conteo esperaba a la animación y a 20x-60x casi no salían camiones.)
+  while (paletasListasDespacho > 0 && c.paletas < N){
     paletasListasDespacho--;
-    c.paletasEnCamino++;
-    // Encolar animación del montacargas o completar directo si estamos avanzando rápido
-    if (fastForwarding){
-      c.paletasEnCamino--;
-      c.paletas++;
-      if (c.paletas >= N){
-        despacharCamion(c);
-        break;
-      }
-    } else {
-      demandasFork.push({ cam:c, bx:Escena.DOCK_Z[c.anden] });
+    c.paletas++;
+    if (!fastForwarding && demandasFork.length < 3) demandasFork.push({ cam:c, bx:Escena.DOCK_Z[c.anden] });
+    if (c.paletas >= N){
+      despacharCamion(c);
+      break;
     }
   }
   if (c.paletas >= N && c.estado === "anden") despacharCamion(c);
@@ -914,7 +911,9 @@ function despacharCamion(c){
   ingresosUSD += c.usd;
   registrarCamionLog(c, false);
   if (!fastForwarding){
-    Escena.rutaCamionSalida(c);
+    // si todavía no llegó al andén, sale apenas llega (así se lo ve cargar)
+    if (c.mov && c.mov.prog < 1) c.salirAlLlegar = true;
+    else Escena.rutaCamionSalida(c);
     Snd.despacho();
   } else {
     Escena.borrarCamion(c);
@@ -1002,13 +1001,7 @@ function stepDES(dtMin){
 
 function simularTurno8h(){
   fastForwarding = true;
-  // Resolver paletas pendientes en tránsito visual hacia camiones actuales
-  demandasFork.forEach(d => {
-    if (d.cam && d.cam.estado === "anden"){
-      d.cam.paletasEnCamino = Math.max(0, d.cam.paletasEnCamino - 1);
-      d.cam.paletas++;
-    }
-  });
+  // Los viajes pendientes del montacargas son sólo visuales: las paletas ya se contaron al despacharlas
   demandasFork.length = 0;
   slidePallets.forEach(s => { Escena.sc.remove(s.mesh); });
   slidePallets.length = 0;
@@ -1389,7 +1382,7 @@ function persona(op){
   pL.position.set(-0.09, 0.92, 0); pR.position.set(0.09, 0.92, 0);
   malla(pierna, MAT_VC, pL); malla(pierna, MAT_VC, pR);
   g.add(pL, pR);
-  g.userData.pL = pL; g.userData.pR = pR;
+  g.userData.pL = pL; g.userData.pR = pR; g.userData.dyn = true;
   return g;
 }
 // Paso de caminata: piernas y brazos en oposición
@@ -1850,6 +1843,7 @@ sgn("PASILLO PEATONAL", 62, 0.18, -2.15, 4.6, 0, true, "none", "#eef3ef");
 sgn("VÍA DE MONTACARGAS", 54, 0.18, 0, 6.5, 0, true, "none", "#f2c230");
 
 // ---------- Maquinaria, tableros de control, colas y operarios Lego por área ----------
+const PERSONAS = []; // todas las personas que caminan (operarios de área y personal de pasillo)
 const carteles = [], spin = [], Q = [], WS = [], tablerosPiloto = [], floorHitMeshes = [];
 
 function ptsOf(i, j){
@@ -1861,14 +1855,14 @@ function ptsOf(i, j){
     case 3: return [[x0 + 2.0 + j * 2.5, z0 + 4.5], [x0 + 3.5 + j * 2.2, z0 + 6.5]];
     case 4: return [[x0 + 2.5 + j * 2.0, z0 + 4.5], [x0 + 2.5 + (j % 3) * 2.4, z0 + 12.0]];
     case 5: return [[x0 + 2.5, z0 + 4.5 + (j % 3) * 4.0], [x1 - 2.5, z0 + 4.5 + (j % 3) * 4.0]];
-    case 6: return [[17.5, DOCK_Z[j % 3]], [21.5, DOCK_Z[j % 3] + 2.2]];
+    case 6: return [[19.0, DOCK_Z[j % 3] + 3.4], [19.0, DOCK_Z[j % 3] - 3.4]]; // a 3 m del carril del montacargas (x = 22)
     case 7: return [[cx - 2 + (j % 3) * 2, z0 + 8], [cx + 2, z0 + 12.5]];
     default: return [[x0 + 3 + (j % 2) * 5, z0 + 5.5 + Math.floor(j / 2) * 4]];
   }
 }
 
 function rw(i){
-  if (WS[i]) G.remove(WS[i].g);
+  if (WS[i]){ G.remove(WS[i].g); WS[i].p.forEach(o => PERSONAS.splice(PERSONAS.indexOf(o), 1)); }
   const a = AR[i], g = new THREE.Group(), n = Math.min(8, a.c);
   WS[i] = { g, torso:[], brazoL:[], brazoR:[], p:[] };
   for (let j = 0; j < n; j++){
@@ -1880,6 +1874,7 @@ function rw(i){
     WS[i].brazoL.push(p.children[1]);
     WS[i].brazoR.push(p.children[2]);
     WS[i].p.push(p);
+    PERSONAS.push(p);
   }
   G.add(g);
 }
@@ -1984,23 +1979,23 @@ AR.forEach((a, i) => {
       paletaEstatica(ex + 3.4, 0.26, ez + 2.4, 0xc49a62, 1.0);
       break;
     }
-    case 5: { // Almacén: racks selectivos (parantes azules, largueros naranjas) con paletas envueltas
-      for (let f = 0; f < 3; f++){
-        const rz = z0 + 3.4 + f * 4.6;
-        for (let m = 0; m <= 3; m++){
-          const ux = x0 + 2.0 + m * 2.8;
-          [-0.5, 0.5].forEach(dz => IB(0.1, 4.6, 0.1, MAT.pintAzul, ux, 2.3, rz + dz));
-          for (let y = 0.6; y < 4.6; y += 1.0) IB(0.05, 0.05, 1.0, MAT.pintAzul, ux, y, rz);
+    case 5: { // Almacén: racks selectivos (parantes azules, largueros naranjas). La fila frontal (z 7.6) recibe las
+      // 12 paletas del montacargas (6 bahías × piso y primer nivel); las filas de atrás son stock fijo decorativo.
+      [7.6, 12.2, 16.8].forEach((rz, f) => {
+        for (let m = 0; m <= 6; m++){
+          const ux = 28.5 + m * 2.0;
+          [-0.55, 0.55].forEach(dz => IB(0.1, 5.4, 0.1, MAT.pintAzul, ux, 2.7, rz + dz));
+          for (let y = 0.6; y < 5.4; y += 1.0) IB(0.05, 0.05, 1.1, MAT.pintAzul, ux, y, rz);
         }
-        for (const lvl of [1.9, 3.7]){
-          [-0.5, 0.5].forEach(dz => IB(8.5, 0.14, 0.08, MAT.pintNaranja, cx, lvl, rz + dz));
-          for (let b = 0; b < 3; b++){
-            const px = x0 + 3.4 + b * 2.8, prod = PRODUCTOS[(f + b + (lvl > 2 ? 2 : 0)) % PRODUCTOS.length];
-            paletaEstatica(px - 0.6, lvl + 0.07, rz, prod.color, 0.95);
-            paletaEstatica(px + 0.6, lvl + 0.07, rz, PRODUCTOS[(f * 2 + b) % PRODUCTOS.length].color, 0.95);
+        for (const lvl of [2.0, 3.9]){
+          [-0.55, 0.55].forEach(dz => IB(12.1, 0.14, 0.08, MAT.pintNaranja, 34.5, lvl - 0.07, rz + dz));
+          for (let b = 0; b < 6; b++){
+            if (f === 0 && lvl === 2.0) continue; // nivel 1 de la fila frontal: lo llena el montacargas
+            paletaEstatica(29.5 + b * 2.0, lvl, rz, PRODUCTOS[(f + b * 2 + (lvl > 3 ? 1 : 0)) % PRODUCTOS.length].color, 1.05);
           }
         }
-      }
+        if (f > 0) for (let b = 0; b < 6; b++) if ((b + f) % 3) paletaEstatica(29.5 + b * 2.0, 0.17, rz, PRODUCTOS[(b + f) % PRODUCTOS.length].color, 1.05);
+      });
       break;
     }
     case 6: { // Despacho y andén: niveladoras, topes de goma, luces de andén
@@ -2053,10 +2048,10 @@ AR.forEach((a, i) => {
 
   // Cola visible de lotes: tambores de 200 L del color del área (hasta 14 por área)
   Q[i] = Array.from({ length:14 }, (_, j) => {
-    const qx = i === 6 ? 19.5 + (j % 4) * 1.4 : x0 + 2.0 + (j % 7) * 1.25;
+    const qx = i === 6 ? 24.2 + (j % 4) * 0.9 : x0 + 2.0 + (j % 7) * 1.25;
     const qz = i === 6 ? -8.5 + Math.floor(j / 4) * 2.2 : (z0 < 0 ? z1 - 2.0 - (j > 6 ? 1.2 : 0) : z0 + 2.2 + (j > 6 ? 1.2 : 0));
     const m = new THREE.Mesh(GEO_TAMBOR, matTambor(a.k));
-    m.position.set(qx, 0.56, qz); m.castShadow = m.receiveShadow = true; G.add(m);
+    m.position.set(qx, 0.56, qz); m.castShadow = m.receiveShadow = true; m.userData.dyn = true; G.add(m);
     return m;
   });
   rw(i);
@@ -2080,6 +2075,7 @@ const NLATAS = 90;
 const imLatas = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.24, 0.24, 0.56, 14), MS({ color:0xffffff, roughness:0.32, metalness:0.45 }), NLATAS);
 const imEtiq = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.255, 0.255, 0.26, 14), MS({ color:0xf3f1ea, roughness:0.6 }), NLATAS);
 imLatas.frustumCulled = imEtiq.frustumCulled = false;
+imLatas.userData.dyn = imEtiq.userData.dyn = true;
 imLatas.castShadow = true;
 G.add(imLatas, imEtiq);
 const CANS = [], _cLata = new THREE.Color();
@@ -2108,6 +2104,7 @@ const CT = [0, 1, 2, 3].map(k => B(0.85, 0.55, 0.85, MAT.carton, 43.8, 1.43, 13.
 B(1.15, 0.14, 1.15, MAT.madera, 43.8, 0.20, 6.2);
 const stg = B(1.0, 1.0, 1.0, MAT.carton, 43.8, 0.65, 6.2);
 stg.visible = false;
+CT.forEach(c => c.userData.dyn = true); stg.userData.dyn = true;
 let cntCajas = 0;
 
 // Paleta móvil (la lleva el montacargas): base con tacos, carga del color del producto y film
@@ -2132,7 +2129,8 @@ function crearPaletaMesh(color){
 }
 
 const stock = Array(12).fill(null); // 12 posiciones de rack en Almacén (x: 30..39, z: 7..17)
-const slotStockXZ = s => [30.5 + (s % 4) * 2.7, 7.6 + Math.floor(s / 4) * 4.6];
+const slotStockXZ = s => [29.5 + (s % 6) * 2.0, 7.6]; // fila frontal del rack: 6 bahías
+const slotStockY = s => s < 6 ? 0.17 : 2.0; // piso y primer nivel
 const outQ = [];
 const demandasFork = [], slidePallets = [];
 
@@ -2231,14 +2229,15 @@ const Escena = {
       pl.position.set(dx, 2.45, -2.75); pl.rotation.y = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
       g.add(pl);
     }
-    let x0 = -76;
-    while (this.camiones.some(o => o !== c && o.malla && Math.abs(o.malla.position.z) < 4 && Math.abs(o.malla.position.x - x0) < 12)) x0 -= 12;
-    g.position.set(x0, 0, 0);
-    g.rotation.y = Math.PI / 2;
+    // llega por la ruta pública (x = -97) desde el norte y gira hacia el portón
+    let z0 = 70;
+    while (this.camiones.some(o => o !== c && o.malla && Math.abs(o.malla.position.x + 97) < 4 && Math.abs(o.malla.position.z - z0) < 12)) z0 += 12;
+    g.position.set(-97, 0, z0);
+    g.rotation.y = Math.PI;
     G.add(g);
     c.malla = g;
     this.camiones.push(c);
-    this.moverCamion(c, [[x0, 0], [-52, 0]], 1.2);
+    this.moverCamion(c, [[-97, z0], [-97, 4], [-90, 0], [-52, 0]], 1.2 + (z0 - 70) / 40);
   },
   borrarCamion(c){
     if (!c.malla) return;
@@ -2252,29 +2251,45 @@ const Escena = {
     c.mov = { pts:v, dur:minutos, prog:0, largo:Math.max(largo, 0.01), reversa:reversa || [], quieto:0 };
   },
   posCam(c, def){ return c.malla ? [c.malla.position.x, c.malla.position.z] : def; },
+  // Si el camión todavía viene por la ruta pública, la nueva ruta empieza completando la entrada por el portón
+  desdeEntrada(c, def){
+    const p = this.posCam(c, def);
+    return p[0] < -88 ? [p, [-97, Math.min(p[1], 4)], [-90, 0], [-70, 0]] : [p];
+  },
   rutaCamionCola(c){
     const s = slotsPatio[c.slot] || { x:-28, z:0 };
-    const p = this.posCam(c, [-52, 0]);
-    this.moverCamion(c, [p, [-44, 0], [s.x, 0], [s.x, s.z]], 1.3);
+    const ini = this.desdeEntrada(c, [-52, 0]);
+    this.moverCamion(c, ini.concat([[-44, 0], [s.x, 0], [s.x, s.z]]), 1.3 + (ini.length > 1 ? 1 : 0));
   },
+  turnos: 0,
   rutaCamionAnden(c, idx){
+    c.turnoAnden = ++this.turnos;
+    // un camión ya despachado que todavía venía a este andén sale directo, sin entrar
+    this.camiones.forEach(o => {
+      if (o !== c && o.anden === idx && o.salirAlLlegar && o.malla){
+        o.salirAlLlegar = false; o.rutaSalida = true;
+        const ini = this.desdeEntrada(o, [-10, 0]);
+        this.moverCamion(o, ini.concat([[-10, 0], [-10, -30], [-14, -30], [-90, -30], [-97, -36], [-97, -150]]), 3.4);
+      }
+    });
     const z = DOCK_Z[idx];
-    const p = this.posCam(c, [-44, 0]);
-    const desdePatio = Math.abs(p[1]) > 3;
-    const pts = desdePatio ? [p, [p[0], 0], [-10, 0]] : [p, [-10, 0]];
+    const ini = this.desdeEntrada(c, [-44, 0]), p = ini[0];
+    const desdePatio = ini.length === 1 && Math.abs(p[1]) > 3;
+    const pts = desdePatio ? [p, [p[0], 0], [-10, 0]] : ini.concat([[-10, 0]]);
     const pasada = z < 0 ? z - 5 : z + 5;
     pts.push([-8, pasada], [-4, z], [4.6, z]);
     const n = pts.length;
     this.moverCamion(c, pts, 1.8, (desdePatio ? [0] : []).concat([n - 3, n - 2]));
   },
   rutaCamionSalida(c){
+    c.rutaSalida = true;
     const z = DOCK_Z[c.anden];
     const p = this.posCam(c, [4.6, z]);
-    this.moverCamion(c, [p, [-5, z], [-5, -30], [-14, -30], [-78, -30]], 2.6);
+    this.moverCamion(c, [p, [-5, z], [-5, -30], [-14, -30], [-90, -30], [-97, -36], [-97, -150]], 3.4);
   },
   rutaCamionRechazo(c){
-    const p = this.posCam(c, [-52, 0]);
-    this.moverCamion(c, [p, [-56, -15], [-78, -30]], 2.2);
+    const ini = this.desdeEntrada(c, [-52, 0]);
+    this.moverCamion(c, ini.concat([[-56, -15], [-70, -30], [-90, -30], [-97, -36], [-97, -150]]), 3.0 + (ini.length > 1 ? 1 : 0));
   }
 };
 
@@ -2308,6 +2323,7 @@ function crearMontacargas(idx){
   dv.children[1].rotation.x = dv.children[2].rotation.x = -0.9;
   g.add(dv);
   g.position.set(24 + idx * 4, 0, 0);
+  g.userData.dyn = true;
   G.add(g);
   Escena.forks.push({ g, chasis:ch, baliza, q:[], pl:null, averiado:false });
 }
@@ -2321,8 +2337,67 @@ const WN = [0, 1, 2, 3].map(j => {
   G.add(g);
   return { g, tx:30 + j * 12, tz:j % 2 ? 2.15 : -2.15, v:1.6 + R() * 0.6 };
 });
+WN.forEach(w => PERSONAS.push(w.g));
 
 volcarInstancias();
+
+// ---------- Colisiones (sólo visual): grilla de obstáculos estáticos dentro de la nave ----------
+// Celda de 0,25 m; cada pieza fija entre 0,35 y 1,6 m de alto marca su huella, inflada por el radio de una persona.
+const GX0 = 14, GZ0 = -21, GR = 0.25, GW = Math.ceil(66 / GR), GH = Math.ceil(42 / GR);
+const GRID = new Uint8Array(GW * GH);
+(function construirGrilla(){
+  const bb = new THREE.Box3(), m4 = new THREE.Matrix4(), inf = 0.25;
+  const marcar = b => {
+    if (b.max.y < 0.35 || b.min.y > 1.6) return;
+    const w = b.max.x - b.min.x, d = b.max.z - b.min.z;
+    if (Math.max(w, d) > 20 && Math.min(w, d) > 3) return; // pisos y losas
+    const i0 = Math.max(0, Math.floor((b.min.x - inf - GX0) / GR)), i1 = Math.min(GW - 1, Math.floor((b.max.x + inf - GX0) / GR));
+    const j0 = Math.max(0, Math.floor((b.min.z - inf - GZ0) / GR)), j1 = Math.min(GH - 1, Math.floor((b.max.z + inf - GZ0) / GR));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) GRID[j * GW + i] = 1;
+  };
+  const visitar = o => {
+    if (o.userData.dyn || !o.visible) return;
+    if (o.isInstancedMesh){
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      for (let k = 0; k < o.count; k++){ o.getMatrixAt(k, m4); bb.copy(o.geometry.boundingBox).applyMatrix4(m4); marcar(bb); }
+    } else if (o.isMesh && !(o.material && o.material.transparent && o.material.opacity < 0.4)){
+      o.updateWorldMatrix(true, false); bb.setFromObject(o); marcar(bb);
+    }
+    o.children.forEach(visitar);
+  };
+  visitar(G);
+})();
+const celdaLibre = (x, z) => {
+  const i = Math.floor((x - GX0) / GR), j = Math.floor((z - GZ0) / GR);
+  return i < 0 || j < 0 || i >= GW || j >= GH || !GRID[j * GW + i];
+};
+function personaCerca(p, x, z, r){
+  return PERSONAS.some(o => o !== p && o.visible !== false && o.parent && (o.position.x - x) ** 2 + (o.position.z - z) ** 2 < r * r);
+}
+// Vehículo cercano por delante de (x, z) en la dirección (fx, fz)
+function vehiculoDelante(x, z, fx, fz, dist){
+  return Escena.forks.some(f => {
+    if (!f.g.visible) return false;
+    const dx = f.g.position.x - x, dz = f.g.position.z - z, d = Math.hypot(dx, dz);
+    return d < dist && (dx * fx + dz * fz) > 0.3 * d;
+  });
+}
+// Avanza una persona hacia (tx, tz) esquivando obstáculos, personas y montacargas.
+// Devuelve 0 si llegó, 1 si caminó y 2 si está esperando.
+function moverPersona(p, tx, tz, v, dt){
+  const x = p.position.x, z = p.position.z, dx = tx - x, dz = tz - z, d = Math.hypot(dx, dz);
+  if (d < 0.15 || (d < 1.4 && !celdaLibre(tx, tz))) return 0;
+  if (vehiculoDelante(x, z, dx / d, dz / d, 2.4)) return 2; // cede el paso al montacargas
+  const st = Math.min(d, v * dt), ang = Math.atan2(dx, dz), atrapado = !celdaLibre(x, z);
+  for (const da of [0, 0.45, -0.45, 0.9, -0.9, 1.4, -1.4]){
+    const a = ang + da, nx = x + Math.sin(a) * st, nz = z + Math.cos(a) * st;
+    if ((atrapado || celdaLibre(nx, nz)) && !personaCerca(p, nx, nz, 0.55)){
+      p.position.x = nx; p.position.z = nz; p.rotation.y = a;
+      return 1;
+    }
+  }
+  return 2;
+}
 
 /* =========================================================================
    6. ANIMACIÓN DE PLANTA, MONTACARGAS, CAMIONES, OPERARIOS Y CÁMARA
@@ -2349,9 +2424,6 @@ function animarFlujo(dt){
       G.remove(s.mesh);
       s.done = true;
       if (s.cam){
-        s.cam.paletasEnCamino = Math.max(0, s.cam.paletasEnCamino - 1);
-        s.cam.paletas++;
-        if (s.cam.paletas >= CFG.paletasPorCamion) despacharCamion(s.cam);
       }
     }
   });
@@ -2362,6 +2434,7 @@ function animarFlujo(dt){
 
 function planFork(f){
   if (f.q.length || f.averiado) return;
+  while (demandasFork.length && demandasFork[0].cam && demandasFork[0].cam.estado !== "anden") demandasFork.shift(); // camión ya salió
   const leg = (x, z, rev, fn) => f.q.push({ x, z, rev, fn });
   const px = f.g.position.x, pz = f.g.position.z;
   const pick = p => { f.g.add(p); p.position.set(0, 0.15, 2.1); p.rotation.set(0, 0, 0); f.pl = p; };
@@ -2398,7 +2471,7 @@ function planFork(f){
     leg(42.2, 0, 1); leg(sx, 0);
     leg(sx, sz - 1.8, 0, () => {
       const q = f.pl; f.pl = null;
-      if (q){ G.add(q); q.position.set(sx, 0.3, sz); stock[idxLibre] = q; }
+      if (q){ G.add(q); q.position.set(sx, slotStockY(idxLibre), sz); stock[idxLibre] = q; }
     });
     leg(sx, 0, 1); leg(28, pz);
   }
@@ -2411,6 +2484,26 @@ function animarForks(dt){
     const l = f.q[0];
     if (!l) return;
     const dx = l.x - f.g.position.x, dz = l.z - f.g.position.z, d = Math.hypot(dx, dz), st = 6.0 * dt;
+    // cede el paso a personas y al otro montacargas que estén delante; tras 2,5 s la persona se aparta
+    if (d > 0.05){
+      const fx = dx / d, fz = dz / d, X = f.g.position.x, Z = f.g.position.z;
+      const delante = (o, r) => { const ex = o.x - X, ez = o.z - Z, dd = Math.hypot(ex, ez); return dd < r && (ex * fx + ez * fz) > 0.45 * dd; };
+      // el radio crece con el paso del cuadro (a 60x y pocos FPS el montacargas avanza metros por cuadro)
+      const nx = X + fx * Math.min(st, d), nz = Z + fz * Math.min(st, d);
+      const pers = PERSONAS.find(p => p.parent && (delante(p.position, 3.0 + st) ||
+        Math.hypot(p.position.x - nx, p.position.z - nz) < 1.0 && Math.hypot(p.position.x - nx, p.position.z - nz) < Math.hypot(p.position.x - X, p.position.z - Z)));
+      const otro = Escena.forks.some((o, k) => o !== f && o.g.visible && k < Escena.forks.indexOf(f) && delante(o.g.position, 4.0));
+      if (pers || otro){
+        f.espera = (f.espera || 0) + dt;
+        if (f.espera < 2.5) return;
+        if (pers){ // la persona se aparta hacia el lado libre; si ninguno está libre, el montacargas sigue esperando
+          const lado = [1, -1].find(sg => celdaLibre(pers.position.x - fz * 1.3 * sg, pers.position.z + fx * 1.3 * sg));
+          if (lado === undefined) return;
+          pers.position.x += -fz * 1.3 * lado; pers.position.z += fx * 1.3 * lado;
+        }
+      }
+      f.espera = 0;
+    }
     if (!l.rev && d > 0.05) f.g.rotation.y = Math.atan2(dx, dz);
     if (d <= st){
       f.g.position.x = l.x; f.g.position.z = l.z;
@@ -2432,14 +2525,14 @@ function animarOperarios(dt, tm){
       const pts = ptsOf(i, j);
       const u = p.userData;
       const q = pts[(u.k || 0) % pts.length];
-      const dx = q[0] - p.position.x, dz = q[1] - p.position.z, d = Math.hypot(dx, dz);
       const bL = WS[i].brazoL[j], bR = WS[i].brazoR[j];
-      if (on && d > 0.12){
-        const st = Math.min(d, 1.5 * dt);
-        p.position.x += dx / d * st; p.position.z += dz / d * st;
-        p.rotation.y = Math.atan2(dx, dz);
+      const paso = on ? moverPersona(p, q[0], q[1], 1.5, dt) : 0;
+      if (paso === 1){
         p.position.y = Math.abs(Math.sin(tm * 8)) * 0.03;
         pasoPersona(p, tm * 8, 0.5);
+      } else if (paso === 2){
+        p.position.y = 0;
+        pasoPersona(p, 0, 0);
       } else {
         p.position.y = 0;
         p.userData.pL.rotation.x = p.userData.pR.rotation.x = 0;
@@ -2456,16 +2549,11 @@ function animarOperarios(dt, tm){
   });
 
   WN.forEach(w => {
-    const p = w.g.position, dx = w.tx - p.x, dz = w.tz - p.z, d = Math.hypot(dx, dz);
-    if (d < 0.4){
+    const r = moverPersona(w.g, w.tx, w.tz, w.v, dt);
+    if (r === 0){
       w.tx = 28 + R() * 48;
       w.tz = R() < 0.5 ? -2.15 : 2.15;
-    } else {
-      p.x += dx / d * w.v * dt;
-      p.z += dz / d * w.v * dt;
-      w.g.rotation.y = Math.atan2(dx, dz);
-      pasoPersona(w.g, tm * 4.5 * w.v, 0.45);
-    }
+    } else pasoPersona(w.g, r === 1 ? tm * 4.5 * w.v : 0, r === 1 ? 0.45 : 0);
   });
 }
 
@@ -2487,25 +2575,66 @@ function puntoEnRuta(pts, p){
   return { pos:_v2, tramo:pts.length - 2 };
 }
 
+// Huella real del camión (Box3: ancho 2,9 m, de -6,35 a +4,47 m en su eje); prueba de ejes separados.
+let ocultadosCamion = 0;
+function esquinasCamion(g){
+  const c = Math.cos(g.rotation.y), s = Math.sin(g.rotation.y);
+  return [[-1.45, -6.35], [1.45, -6.35], [1.45, 4.47], [-1.45, 4.47]].map(([x, z]) => [g.position.x + x * c + z * s, g.position.z - x * s + z * c]);
+}
+function huellasCamion(a, b){
+  if (Math.abs(a.position.x - b.position.x) > 12 || Math.abs(a.position.z - b.position.z) > 12) return false;
+  const A = esquinasCamion(a), B = esquinasCamion(b);
+  for (const P of [A, B]) for (let k = 0; k < 4; k++){
+    const [x1, z1] = P[k], [x2, z2] = P[(k + 1) % 4], nx = z1 - z2, nz = x2 - x1;
+    const pa = A.map(q => q[0] * nx + q[1] * nz), pb = B.map(q => q[0] * nx + q[1] * nz);
+    if (Math.max(...pa) < Math.min(...pb) || Math.max(...pb) < Math.min(...pa)) return false;
+  }
+  return true;
+}
 function animarCamiones(dtMin){
   for (let idx = Escena.camiones.length - 1; idx >= 0; idx--){
     const c = Escena.camiones[idx];
     if (!c.malla || !c.mov) continue;
     const m = c.mov;
     if (m.prog >= 1){
+      if (c.salirAlLlegar){ c.salirAlLlegar = false; Escena.rutaCamionSalida(c); continue; }
       if (c.estado === "saliendo" || c.estado === "rechazado"){
         Escena.borrarCamion(c);
         Escena.camiones.splice(idx, 1);
       }
       continue;
     }
+    // Distancia de seguimiento, revisada en cada subpaso (a 60x un cuadro puede mover decenas de metros).
+    // Un camión no entra a menos de 8 m de otro que tiene delante; si dos coinciden o se bloquean de frente,
+    // pasa el de menor índice. El tope de 12 min de espera evita un atasco eterno.
     const adv = dtMin / m.dur;
     const pasos = Math.max(1, Math.ceil(adv * m.largo / 0.8));
+    let bloqueo = null;
     for (let k = 0; k < pasos && m.prog < 1; k++){
       const prox = Math.min(1, m.prog + adv / pasos);
       const r = puntoEnRuta(m.pts, prox);
       const x = r.pos.x, z = r.pos.y, x0 = c.malla.position.x, z0 = c.malla.position.z;
       const d = Math.hypot(x - x0, z - z0) || 1, fx = (x - x0) / d, fz = (z - z0) / d;
+      bloqueo = Escena.camiones.find((o, j) => {
+        if (o === c || !o.malla || o === c.ignorar) return false;
+        const ex = o.malla.position.x - x0, ez = o.malla.position.z - z0, dist = Math.hypot(ex, ez);
+        if (dist < 1) return j < idx;                       // coinciden: espera el de mayor índice
+        // relevo de andén: el que llega espera a que el que sale se aleje 18 m del andén
+        // relevo de andén: quien recibió el andén después espera a que el anterior se aleje 18 m de él
+        // (el que llega espera en el carril central; el que sale no cede ante uno posterior)
+        if (c.turnoAnden && o.turnoAnden && o.anden === c.anden){
+          if (!c.rutaSalida && o.turnoAnden < c.turnoAnden && Math.abs(z0) < 3 && x0 < -9 &&
+              Math.hypot(o.malla.position.x - 4.6, o.malla.position.z - DOCK_Z[c.anden]) < 18) return true;
+          if (c.rutaSalida && o.turnoAnden > c.turnoAnden) return false;
+        }
+        if (o.bloqueadoPor === c && j > idx) return false;  // bloqueo mutuo: pasa el de menor índice
+        const fw = (o.malla.position.x - x) * fx + (o.malla.position.z - z) * fz;
+        const lat = Math.abs((o.malla.position.x - x) * fz - (o.malla.position.z - z) * fx);
+        const dn = Math.hypot(o.malla.position.x - x, o.malla.position.z - z);
+        return (fw > -2 && fw < 13 && lat < 3.2 && (ex * fx + ez * fz) > 0)  // corredor de seguimiento (el camión mide 10,8 m)
+          || (dn < 5.5 && dn < dist && (ex * fx + ez * fz) > -0.3 * dist); // incorporación lateral en cruces
+      }) || null;
+      if (bloqueo) break;
       m.prog = prox;
       c.malla.position.x = x; c.malla.position.z = z;
       const atras = m.reversa.indexOf(r.tramo) >= 0;
@@ -2515,7 +2644,19 @@ function animarCamiones(dtMin){
       const maxG = 0.55 * Math.hypot(x - x0, z - z0);
       c.malla.rotation.y += Math.max(-maxG, Math.min(maxG, dif));
     }
+    c.bloqueadoPor = bloqueo;
+    c.espera = bloqueo ? (c.espera || 0) + dtMin : 0;
+    // destrabe: sólo ante un bloqueo mutuo que dure más de 12 min, el camión ignora al otro hasta separarse
+    if (bloqueo && c.espera > 12 && bloqueo.bloqueadoPor === c && !bloqueo.ignorar){ c.ignorar = bloqueo; c.espera = 0; } // sólo uno de los dos pasa
+    if (c.ignorar && (!c.ignorar.malla || c.ignorar.malla.position.distanceTo(c.malla.position) > 12)) c.ignorar = null;
   }
+  // Último recurso, para saturación a 60x: si dos huellas reales se cruzan, el de mayor índice se oculta hasta separarse.
+  const vis = Escena.camiones.filter(c => c.malla);
+  vis.forEach((c, i) => {
+    const tapa = vis.some((o, j) => j < i && o.malla.visible && huellasCamion(c.malla, o.malla));
+    if (tapa && c.malla.visible) ocultadosCamion++;
+    c.malla.visible = !tapa;
+  });
   const cerca = Escena.camiones.some(c => c.malla && c.malla.position.x > -58 && c.malla.position.x < -42 && Math.abs(c.malla.position.z) < 10);
   const obj = cerca ? -Math.PI / 2.2 : 0;
   barrera.rotation.x += (obj - barrera.rotation.x) * 0.14;
