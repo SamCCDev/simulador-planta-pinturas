@@ -134,6 +134,9 @@
   .formula{font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;margin:4px 0 8px;padding:6px 8px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);overflow-wrap:anywhere}
   .formula:empty,.aviso:empty{display:none}
   .aviso{color:#f0883e}
+  .bloqueKS h4{margin:12px 0 4px;font-size:13px}
+  .nota.ks.ok{color:#3fb950}
+  .nota.ks.err{color:#f85149}
   table.momentos{width:100%;border-collapse:collapse;font-size:11.5px;margin:2px 0 10px}
   table.momentos th,table.momentos td{padding:3px 6px;border-bottom:1px solid rgba(139,148,158,.2);text-align:right}
   table.momentos th:first-child,table.momentos td:first-child{text-align:left}
@@ -875,6 +878,51 @@ function pdfOf(a){
   if (d === "wei") return v => { const x = (v - p.gama) / p.beta; return x <= 0 ? 0 : (p.alfa / p.beta) * x ** (p.alfa - 1) * Math.exp(-(x ** p.alfa)); };
   if (d === "erl"){ const r = p.k * p.lam, lf = lnGamma(p.k); return v => v <= 0 ? 0 : Math.exp(p.k * Math.log(r) + (p.k - 1) * Math.log(v) - r * v - lf); }
   return v => Math.exp(-0.5 * ((v - p.mu) / p.sd) ** 2) / (p.sd * 2.506628);
+}
+
+// ---------- Prueba de Kolmogorov-Smirnov para los datos cargados ----------
+// Procedimiento de referencia/modelado_variables_aleatorias.py (prueba_kolmogorov_smirnov_weibull): intervalos,
+// frecuencia observada acumulada POA frente a la probabilidad esperada acumulada PEA en el límite superior,
+// D = máx |POA − PEA| y valor crítico al 5 % (tabla para n ≤ 35; 1,36/√n para n mayor).
+function erf(x){ // Abramowitz y Stegun 7.1.26 (error < 1,5e-7)
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+}
+const Phi = z => 0.5 * (1 + erf(z / Math.SQRT2));
+function cdfOf(d, p){
+  if (d === "nor") return x => Phi((x - p.mu) / p.sd);
+  if (d === "uni") return x => x <= p.a ? 0 : x >= p.b ? 1 : (x - p.a) / (p.b - p.a);
+  if (d === "tri") return x => { const { min:a, moda:c, max:b } = p;
+    return x <= a ? 0 : x >= b ? 1 : x <= c ? (x - a) ** 2 / ((b - a) * (c - a || 1e-12)) : 1 - (b - x) ** 2 / ((b - a) * (b - c || 1e-12)); };
+  if (d === "exp") return x => x <= 0 ? 0 : 1 - Math.exp(-x / p.media);
+  if (d === "log") return x => { const { sN, mN } = logNormalAsociada(p); return x <= 0 ? 0 : Phi((Math.log(x) - mN) / sN); };
+  if (d === "wei") return x => x <= p.gama ? 0 : 1 - Math.exp(-(((x - p.gama) / p.beta) ** p.alfa));
+  if (d === "erl") return x => { if (x <= 0) return 0; const r = p.k * p.lam * x; let t = 1, sum = 1;
+    for (let j = 1; j < p.k; j++){ t *= r / j; sum += t; } return 1 - Math.exp(-r) * sum; };
+  return null;
+}
+const KS_TABLA_05 = [0, 0.975, 0.842, 0.708, 0.624, 0.565, 0.521, 0.486, 0.457, 0.432, 0.410, 0.391, 0.375, 0.361, 0.349, 0.338, 0.328,
+  0.318, 0.309, 0.301, 0.294, 0.287, 0.281, 0.275, 0.269, 0.264, 0.259, 0.254, 0.250, 0.246, 0.242, 0.238, 0.234, 0.231, 0.227, 0.224];
+const ksCritico = n => n <= 35 ? KS_TABLA_05[n] : 1.36 / Math.sqrt(n);
+// Parámetros estimados por momentos (misma media y desviación que la muestra) y prueba agrupada.
+function pruebaKS(datos, d){
+  const n = datos.length, m = datos.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(datos.reduce((a, v) => a + (v - m) ** 2, 0) / (n - 1));
+  const par = parInicial(m, sd)[d], F = cdfOf(d, par);
+  const ord = datos.slice().sort((a, b) => a - b), lo = ord[0], hi = ord[n - 1];
+  const k = Math.max(5, Math.min(15, Math.round(Math.sqrt(n)))), w = (hi - lo) / k || 1;
+  const filas = []; let poa = 0, D = 0;
+  for (let i = 0; i < k; i++){
+    const inf = lo + i * w, sup = i === k - 1 ? Infinity : lo + (i + 1) * w;
+    const oi = ord.filter(x => (i === 0 ? x >= inf : x > inf) && x <= sup).length;
+    poa += oi / n;
+    const pea = sup === Infinity ? 1 : F(sup), dif = Math.abs(poa - pea);
+    D = Math.max(D, dif);
+    filas.push({ inf, sup, oi, poa, pea, dif });
+  }
+  const critico = ksCritico(n);
+  return { n, media:m, sd, d, par, filas, D, critico, noRechaza:D < critico };
 }
 
 function src(i){
@@ -3203,6 +3251,31 @@ function construirPestanaParametros(i){
     estadoCSV.textContent = "Activos: " + a.emp.length + " valores (" + (a.empCol || "muestra") + "), media " + a.mu.toFixed(2) + " min, desv. est. " + a.sd.toFixed(2) + " min.";
   }
   bloqueCSV.appendChild(estadoCSV);
+  // Prueba K-S de los datos cargados contra la distribución elegida
+  const bloqueKS = el("div", { cls:"bloqueKS" });
+  bloqueCSV.appendChild(bloqueKS);
+  function renderKS(){
+    bloqueKS.replaceChildren();
+    if (!a.emp || a.emp.length < 5){ if (a.emp) bloqueKS.appendChild(el("div", { cls:"nota", txt:"La prueba K-S necesita al menos 5 datos." })); return; }
+    const nombres = { nor:"Normal", tri:"Triangular", log:"Lognormal", exp:"Exponencial", uni:"Uniforme", wei:"Weibull", erl:"Erlang / Gamma" };
+    const selKS = el("select", { attrs:{ "aria-label":"Distribución a contrastar" } }, ...Object.entries(nombres).map(([v, t]) =>
+      el("option", { txt:t, attrs:Object.assign({ value:v }, (a.distKS || "nor") === v ? { selected:"selected" } : {}) })));
+    selKS.onchange = () => { a.distKS = selKS.value; renderKS(); };
+    const r = pruebaKS(a.emp, a.distKS || "nor"), f = (v, k = 4) => Number.isFinite(v) ? v.toFixed(k) : "∞";
+    bloqueKS.appendChild(el("h4", { txt:"Prueba de Kolmogorov-Smirnov (α = 0,05)" }));
+    bloqueKS.appendChild(el("div", { cls:"campo renglon" }, el("label", { txt:"Distribución a contrastar" }), selKS));
+    bloqueKS.appendChild(el("div", { cls:"formula", txt:"Parámetros estimados por momentos (media " + f(r.media) + ", s " + f(r.sd) + "): " + formulaDist(r.d, r.par) }));
+    const tabla = el("table", { cls:"momentos" }, el("tr", null, ...["Intervalo", "Oi", "POA", "PEA", "|POA − PEA|"].map(t => el("th", { txt:t }))),
+      ...r.filas.map(x => el("tr", null, el("td", { txt:f(x.inf, 2) + " – " + f(x.sup, 2) }), el("td", { txt:String(x.oi) }),
+        el("td", { txt:f(x.poa) }), el("td", { txt:f(x.pea) }), el("td", { txt:f(x.dif) }))));
+    bloqueKS.appendChild(tabla);
+    const ver = el("div", { cls:"nota ks " + (r.noRechaza ? "ok" : "err"),
+      txt:"D = " + f(r.D) + (r.noRechaza ? " < " : " ≥ ") + "D crítico (n = " + r.n + ", 5 %) = " + f(r.critico) + ": " +
+        (r.noRechaza ? "no se rechaza H₀; los datos son compatibles con la " : "se rechaza H₀; los datos no siguen la ") + nombres[r.d].toLowerCase() + "." });
+    bloqueKS.appendChild(ver);
+    bloqueKS.appendChild(el("div", { cls:"nota", txt:"Con parámetros estimados de la propia muestra, el valor crítico de tabla es conservador (corrección de Lilliefors)." }));
+  }
+  renderKS();
   p0.appendChild(bloqueCSV);
 
   let ultimoParseMulti = null;
@@ -3223,6 +3296,7 @@ function construirPestanaParametros(i){
     const m = avg(vals), sdM = stdMuestral(vals);
     a.emp = vals;
     a.empCol = col.nombre;
+    if (a.dist !== "emp") a.distKS = a.dist; // la K-S contrasta, por defecto, con la distribución que el área tenía
     a.dist = "emp";
     a.mu = Math.max(0.15, m);
     a.sd = sdM;
@@ -3230,6 +3304,7 @@ function construirPestanaParametros(i){
     syncExpLock();
     estadoCSV.className = "ok";
     estadoCSV.textContent = "Cargados " + vals.length + " valores (" + col.nombre + "): media " + a.mu.toFixed(2) + " min, desv. est. (n−1) " + a.sd.toFixed(2) + " min.";
+    renderKS();
     if (tab === 1) drawPanel();
   }
 
