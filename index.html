@@ -116,6 +116,12 @@
     border:1px solid var(--bd);border-radius:6px;padding:4px 7px}
   .campo input:disabled{opacity:.55;cursor:not-allowed}
   .nota{color:var(--mu);font-size:11.5px;line-height:1.45;margin:4px 0 8px}
+  .formula{font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;margin:4px 0 8px;padding:6px 8px;border-radius:6px;background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);overflow-wrap:anywhere}
+  .formula:empty,.aviso:empty{display:none}
+  .aviso{color:#f0883e}
+  table.momentos{width:100%;border-collapse:collapse;font-size:11.5px;margin:2px 0 10px}
+  table.momentos th,table.momentos td{padding:3px 6px;border-bottom:1px solid rgba(139,148,158,.2);text-align:right}
+  table.momentos th:first-child,table.momentos td:first-child{text-align:left}
 
   /* Bloque CSV prioritario */
   .bloqueCSV{margin:10px 0;padding:10px;border-radius:9px;background:rgba(88,166,255,.07);
@@ -255,6 +261,8 @@
     <div id="p1" hidden>
       <div class="nota" id="notaDist">Tiempo de servicio observado (barras) y curva teórica seleccionada (línea naranja).</div>
       <canvas id="h1" width="360" height="185"></canvas>
+      <div class="formula" id="formulaDist"></div>
+      <table id="tablaMomentos" class="momentos"></table>
       <div class="nota">Tiempo de espera en cola observado (min).</div>
       <canvas id="h2" width="360" height="175"></canvas>
     </div>
@@ -286,7 +294,9 @@
     <h2 id="titAyuda">Guía rápida del simulador</h2>
     <p>Planta completa de pinturas de <b>American Chemical S.R.L.</b> con 9 áreas conectadas desde recepción y dispersión hasta despacho en andenes, caseta de entrada y báscula de salida.</p>
     <p><b>Navegación:</b> Use <b>Exterior</b> (arrastre para girar, rueda para acercar), <b>Vista en planta</b> (cámara cenital sin techo), <b>Quitar techo</b> o <b>Recorrer</b> (camine con <b>WASD</b> o las flechas, mire con el ratón y presione <b>E</b> para abrir el panel del área donde se encuentre).</p>
-    <p><b>Datos CSV y distribuciones:</b> Haga clic en cualquier área para abrir su panel, elegir la distribución estadística (Normal, Triangular, Lognormal, Exponencial, Uniforme o Datos cargados) y pegar o cargar archivos <b>.csv</b> o <b>.txt</b> con validación automática.</p>
+    <p><b>Datos CSV y distribuciones:</b> Haga clic en cualquier área para abrir su panel, elegir la distribución estadística (Normal, Triangular, Lognormal, Exponencial, Uniforme, Weibull, Erlang/Gamma o Datos cargados) y pegar o cargar archivos <b>.csv</b> o <b>.txt</b> con validación automática. Los generadores siguen la Tabla 3.18: el panel muestra la fórmula con los valores actuales y, en la pestaña Distribuciones, la media, la varianza, la asimetría y la curtosis de la muestra frente a las teóricas. En la lognormal se ingresan la media y la varianza del tiempo.</p>
+    <p><b>Ejemplos del catálogo:</b> el selector del panel carga las variables del catálogo de American Chemical (báscula, andén, llenado de tambor, TTR, TBF, tránsito y etapas de envasado). Muchas están en otra escala que las áreas, que atienden una paleta por servicio en unos 2 minutos, así que el panel avisa cuando el área se satura (ρ ≥ 1). Por eso los valores por defecto de las áreas siguen balanceados.</p>
+    <p><b>Falla del montacargas (ajuste 5):</b> el tiempo entre fallas sigue una Weibull con la forma del catálogo (α = 1,6), pero con escala β = 45 min en lugar de 180 h, y la reparación sigue una exponencial de media 19 min en lugar de 2,86 h. Se reescaló porque, con los valores del catálogo, la media entre fallas es de 161 h y en un turno de 8 h el montacargas casi nunca fallaría, de modo que el escenario no mostraría la contingencia.</p>
     <div class="accionesModal">
       <button id="btnOkAyuda" class="prim">Entendido</button>
     </div>
@@ -363,35 +373,84 @@ const LINEAS = [
 
 // Áreas en coordenadas XZ dentro de la nave [x0, z0, x1, z1].
 // Nave principal: x in [14, 80], z in [-21, 21]; pasillo central z in [-3, 3].
-// Parámetros propios de cada distribución, iniciados para que todas tengan la media y la desviación base.
-// Lognormal: μ y σ del logaritmo del tiempo (convención de numpy.random.lognormal).
+// Distribuciones según la Tabla 3.18 (generador de la materia, referencia/generador_distribuciones_american_chemical.py).
+// Parámetros propios de cada distribución, iniciados para que todas tengan la media y la desviación base del área.
+// Lognormal: se ingresan la media μ y la varianza σ² DEL TIEMPO (no del logaritmo), como en la Tabla 3.18.
+function lnGamma(x){ // Lanczos (g = 7), precisión ~1e-13
+  const c = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61503916999185,
+    12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - lnGamma(1 - x);
+  x -= 1; let a = c[0]; const t = x + 7.5;
+  for (let i = 1; i < 9; i++) a += c[i] / (x + i);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+}
+const Gam = x => Math.exp(lnGamma(x));
+// Forma α de la Weibull que da el coeficiente de variación pedido (bisección sobre log α).
+function alfaWeibull(cv){
+  const f = al => Math.sqrt(Gam(1 + 2 / al) / Gam(1 + 1 / al) ** 2 - 1) - cv;
+  let lo = 0.2, hi = 50;
+  for (let i = 0; i < 80; i++){ const m = Math.sqrt(lo * hi); if (f(m) > 0) lo = m; else hi = m; }
+  return Math.sqrt(lo * hi);
+}
 function parInicial(m, s){
-  const q = Math.log(1 + (s / m) ** 2);
+  const al = alfaWeibull(s / m);
   return {
-    nor:{ mu:m, sd:s },
+    nor:{ mu:m, sd:s, met:"bm" },
     tri:{ min:Math.max(0.1, m - Math.sqrt(6) * s), moda:m, max:m + Math.sqrt(6) * s },
-    log:{ mu:Math.log(m) - q / 2, sd:Math.sqrt(q) },
+    log:{ media:m, var:s * s },
     exp:{ media:m },
-    uni:{ a:Math.max(0.1, m - Math.sqrt(3) * s), b:m + Math.sqrt(3) * s }
+    uni:{ a:Math.max(0.1, m - Math.sqrt(3) * s), b:m + Math.sqrt(3) * s },
+    wei:{ alfa:al, beta:m / Gam(1 + 1 / al), gama:0 },
+    erl:{ k:Math.max(1, Math.round((m / s) ** 2)), lam:1 / m }
   };
 }
-// Media y desviación teóricas de la distribución elegida (alimentan el Excel y los resúmenes).
-function momentos(d, p){
-  if (d === "nor") return [p.mu, p.sd];
-  if (d === "tri"){ const { min:a, moda:c, max:b } = p; return [(a + b + c) / 3, Math.sqrt((a * a + b * b + c * c - a * b - a * c - b * c) / 18)]; }
-  if (d === "log") return [Math.exp(p.mu + p.sd ** 2 / 2), Math.sqrt((Math.exp(p.sd ** 2) - 1) * Math.exp(2 * p.mu + p.sd ** 2))];
-  if (d === "exp") return [p.media, p.media];
-  if (d === "uni") return [(p.a + p.b) / 2, (p.b - p.a) / Math.sqrt(12)];
+// Parámetros de la normal asociada a la lognormal (Tabla 3.18).
+const logNormalAsociada = p => ({ sN:Math.sqrt(Math.log(1 + p.var / (p.media * p.media))), mN:Math.log(p.media * p.media / Math.sqrt(p.media * p.media + p.var)) });
+// Momentos teóricos: [media, desviación, asimetría, exceso de curtosis].
+function momentos4(d, p){
+  if (d === "nor") return [p.mu, p.sd, 0, 0];
+  if (d === "tri"){
+    const { min:a, moda:c, max:b } = p, q = a * a + b * b + c * c - a * b - a * c - b * c;
+    return [(a + b + c) / 3, Math.sqrt(q / 18), q > 0 ? Math.SQRT2 * (a + b - 2 * c) * (2 * a - b - c) * (a - 2 * b + c) / (5 * q ** 1.5) : 0, -0.6];
+  }
+  if (d === "log"){ const w = Math.exp(logNormalAsociada(p).sN ** 2); return [p.media, Math.sqrt(p.var), (w + 2) * Math.sqrt(w - 1), w ** 4 + 2 * w ** 3 + 3 * w ** 2 - 6]; }
+  if (d === "exp") return [p.media, p.media, 2, 6];
+  if (d === "uni") return [(p.a + p.b) / 2, (p.b - p.a) / Math.sqrt(12), 0, -1.2];
+  if (d === "wei"){
+    const [g1, g2, g3, g4] = [1, 2, 3, 4].map(i => Gam(1 + i / p.alfa)), v = g2 - g1 * g1;
+    return [p.gama + p.beta * g1, p.beta * Math.sqrt(v), (g3 - 3 * g1 * g2 + 2 * g1 ** 3) / v ** 1.5, (g4 - 4 * g1 * g3 + 6 * g1 * g1 * g2 - 3 * g1 ** 4) / (v * v) - 3];
+  }
+  if (d === "erl") return [1 / p.lam, 1 / (p.lam * Math.sqrt(p.k)), 2 / Math.sqrt(p.k), 6 / p.k];
   return null;
 }
+// Media y desviación teóricas de la distribución elegida (alimentan el Excel y los resúmenes).
+const momentos = (d, p) => { const m = momentos4(d, p); return m && [m[0], m[1]]; };
 // Valida los parámetros; devuelve el texto del error o "" si están bien.
 function errorParametros(d, p){
   const ok = v => Number.isFinite(v);
   if (d === "nor") return !ok(p.mu) || p.mu <= 0 ? "La media debe ser mayor que 0." : (!ok(p.sd) || p.sd <= 0 ? "La desviación debe ser mayor que 0." : "");
-  if (d === "tri") return ![p.min, p.moda, p.max].every(ok) || p.min < 0 ? "El mínimo no puede ser negativo." : (!(p.min <= p.moda && p.moda <= p.max && p.min < p.max) ? "Debe cumplirse mínimo ≤ moda ≤ máximo, con mínimo < máximo." : "");
-  if (d === "log") return !ok(p.mu) ? "μ debe ser un número." : (!ok(p.sd) || p.sd <= 0 ? "σ debe ser mayor que 0." : "");
+  if (d === "tri") return ![p.min, p.moda, p.max].every(ok) || p.min < 0 ? "El mínimo no puede ser negativo." : (!(p.min <= p.moda && p.moda <= p.max && p.min < p.max) ? "Debe cumplirse a ≤ c ≤ b, con a < b." : "");
+  if (d === "log") return !ok(p.media) || p.media <= 0 ? "La media μ debe ser mayor que 0." : (!ok(p.var) || p.var <= 0 ? "La varianza σ² debe ser mayor que 0." : "");
   if (d === "exp") return !ok(p.media) || p.media <= 0 ? "La media (1/λ) debe ser mayor que 0." : "";
   if (d === "uni") return ![p.a, p.b].every(ok) || p.a < 0 ? "a no puede ser negativo." : (p.b <= p.a ? "b debe ser mayor que a." : "");
+  if (d === "wei") return !ok(p.alfa) || p.alfa <= 0 ? "La forma α debe ser mayor que 0." : (!ok(p.beta) || p.beta <= 0 ? "La escala β debe ser mayor que 0." : (!ok(p.gama) || p.gama < 0 ? "La localización γ no puede ser negativa." : ""));
+  if (d === "erl") return !Number.isInteger(p.k) || p.k < 1 || p.k > 50 ? "k debe ser un entero entre 1 y 50." : (!ok(p.lam) || p.lam <= 0 ? "λ debe ser mayor que 0." : "");
+  return "";
+}
+// Fórmula del generador con los valores actuales, como en el catálogo (r_i uniforme en (0, 1)).
+function formulaDist(d, p){
+  const f = v => +(+v).toFixed(4);
+  if (d === "uni") return "U_i = " + f(p.a) + " + (" + f(p.b) + " − " + f(p.a) + ")·r_i";
+  if (d === "tri"){ const fc = (p.moda - p.min) / (p.max - p.min);
+    return "Si r_i ≤ (c−a)/(b−a) = " + f(fc) + ": T_i = " + f(p.min) + " + √((b−a)(c−a)·r_i); si no: T_i = " + f(p.max) + " − √((b−a)(b−c)(1−r_i))"; }
+  if (d === "nor") return p.met === "tlc"
+    ? "N_i = (Σ_{j=1}^{12} r_j − 6)·" + f(p.sd) + " + " + f(p.mu) + "  (Teorema del Límite Central)"
+    : "N_i = [√(−2·ln(1−r_i))·cos(2π·r_j)]·" + f(p.sd) + " + " + f(p.mu) + "  (Box-Muller)";
+  if (d === "exp") return "E_i = −(1/λ)·ln(1−r_i), con λ = " + f(1 / p.media) + " → E_i = −" + f(p.media) + "·ln(1−r_i)";
+  if (d === "wei") return "W_i = " + (p.gama ? f(p.gama) + " + " : "") + f(p.beta) + "·(−ln(1−r_i))^(1/" + f(p.alfa) + ")";
+  if (d === "erl") return "ER_i = −(1/(k·λ))·ln(Π_{j=1}^{" + p.k + "} (1−r_j)), con k = " + p.k + " y λ = " + f(p.lam);
+  if (d === "log"){ const { sN, mN } = logNormalAsociada(p);
+    return "LN_i = exp(N_i), N_i = (Σ_{j=1}^{12} r_j − 6)·σ_N + μ_N; σ_N = √ln(1+σ²/μ²) = " + f(sN) + ", μ_N = ln(μ²/√(μ²+σ²)) = " + f(mN); }
   return "";
 }
 
@@ -406,6 +465,40 @@ const AR_BASE = [
   { n:"Laboratorio de calidad",       r:[28,-21,41,-3],  k:0x9fb3c0, lam:null, mu:5.00, sd:1.00, c:1, pf:0.00, nx:[] },
   { n:"Oficinas (pedidos)",           r:[41,-21,54,-3],  k:0xc9a77c, lam:0.35, mu:2.40, sd:0.50, c:2, pf:0.00, nx:[] }
 ];
+
+// Catálogo de American Chemical S.R.L. (referencia/generador_distribuciones_american_chemical.py, columna «teorico»).
+const CATALOGO = [
+  { nombre:"Pesaje en báscula · U(10, 20) min", dist:"uni", par:{ a:10, b:20 }, unidad:"min", teo:{ media:15, var:8.3333 } },
+  { nombre:"Ocupación de andén · Tri(30, 45, 60) min", dist:"tri", par:{ min:30, moda:45, max:60 }, unidad:"min", teo:{ media:45, var:37.5 } },
+  { nombre:"Llenado de tambor 200 L · N(15,6164; 2,2376) min", dist:"nor", par:{ mu:15.6164, sd:2.2376, met:"bm" }, unidad:"min", teo:{ media:15.6164, var:5.0069 } },
+  { nombre:"Reparación del montacargas (TTR) · Exp(λ = 0,35) h", dist:"exp", par:{ media:1 / 0.35 }, unidad:"h", teo:{ media:1 / 0.35, var:1 / 0.35 ** 2 } },
+  { nombre:"Tiempo entre fallas (TBF) · Weibull(1,6; 180) h", dist:"wei", par:{ alfa:1.6, beta:180, gama:0 }, unidad:"h", teo:{ media:180 * Gam(1 + 1 / 1.6), var:180 ** 2 * (Gam(1 + 2 / 1.6) - Gam(1 + 1 / 1.6) ** 2) } },
+  { nombre:"Tránsito Santa Cruz–Cochabamba · LN(10,20; 4,25) h", dist:"log", par:{ media:10.2, var:4.25 }, unidad:"h", teo:{ media:10.2, var:4.25 } },
+  { nombre:"Etapas de envasado y purga · Erlang(k = 2, λ = 0,1333) min", dist:"erl", par:{ k:2, lam:0.1333 }, unidad:"min", teo:{ media:1 / 0.1333, var:1 / (2 * 0.1333 ** 2) } }
+];
+// Cuatro momentos de una muestra, con las fórmulas de referencia/modelado_variables_aleatorias.py
+// (varianza con n − 1, asimetría G₁ y exceso de curtosis G₂ insesgados de Fisher).
+function momentosMuestra(x){
+  const n = x.length;
+  if (n < 4) return null;
+  const m = x.reduce((a, b) => a + b, 0) / n;
+  let s2 = 0, s3 = 0, s4 = 0;
+  for (const v of x){ const d = v - m, d2 = d * d; s2 += d2; s3 += d2 * d; s4 += d2 * d2; }
+  const m2 = s2 / n, m3 = s3 / n, m4 = s4 / n;
+  return { n, media:m, var:s2 / (n - 1),
+    g1:m2 > 0 ? Math.sqrt(n * (n - 1)) / (n - 2) * m3 / m2 ** 1.5 : 0,
+    g2:m2 > 0 ? (n - 1) / ((n - 2) * (n - 3)) * ((n + 1) * m4 / (m2 * m2) - 3 * (n - 1)) : 0 };
+}
+// Tasa de llegada efectiva de cada área (lotes/min), para avisar cuando ρ ≥ 1.
+function AR_LLEGADAS(i){
+  let lam = AR.map(a => a.lam || 0);
+  for (let it = 0; it < 20; it++){ // punto fijo de λ_j = λ_externa_j + Σ λ_q · p(q → j)
+    const nuevo = AR.map(a => a.lam || 0);
+    AR.forEach((a, q) => (a.nx || []).forEach(([j, pr]) => { nuevo[j] += lam[q] * pr; }));
+    lam = nuevo;
+  }
+  return lam[i];
+}
 
 const AR = AR_BASE.map(a => Object.assign({}, a, { dist:"nor", emp:null, empCol:null, par:parInicial(a.mu, a.sd) }));
 
@@ -713,23 +806,31 @@ const up = i => {
   s.lt = T;
 };
 
+const r01 = () => { let r = R(); while (r <= 0 || r >= 1) r = R(); return r; }; // r_i en (0, 1), sin 0 ni 1 exactos
+const sumaDoce = () => { let t = 0; for (let j = 0; j < 12; j++) t += R(); return t - 6; };
 function smpl(a){
   const d = a.dist || "nor", p = a.par[d];
   let v;
   if (d === "emp" && a.emp && a.emp.length){
     v = a.emp[Math.floor(R() * a.emp.length)];
   } else if (d === "tri"){
-    const { min:lo, moda:c, max:hi } = p, u = R(), F = (c - lo) / (hi - lo);
-    v = u < F ? lo + Math.sqrt(u * (hi - lo) * (c - lo)) : hi - Math.sqrt((1 - u) * (hi - lo) * (hi - c));
+    const { min:lo, moda:c, max:hi } = p, u = r01(), F = (c - lo) / (hi - lo);
+    v = u <= F ? lo + Math.sqrt((hi - lo) * (c - lo) * u) : hi - Math.sqrt((hi - lo) * (hi - c) * (1 - u));
   } else if (d === "log"){
-    v = Math.exp(p.mu + p.sd * rn());
+    const { sN, mN } = logNormalAsociada(p);
+    v = Math.exp(sumaDoce() * sN + mN);
   } else if (d === "exp"){
-    v = -p.media * Math.log(1 - Math.min(0.999999, R()));
+    v = -p.media * Math.log(1 - r01());
   } else if (d === "uni"){
-    v = p.a + (p.b - p.a) * R();
+    v = p.a + (p.b - p.a) * r01();
+  } else if (d === "wei"){
+    v = p.gama + p.beta * Math.pow(-Math.log(1 - r01()), 1 / p.alfa);
+  } else if (d === "erl"){
+    let pr = 1; for (let j = 0; j < p.k; j++) pr *= 1 - r01();
+    v = -Math.log(pr) / (p.k * p.lam);
   } else {
     const q = a.par.nor;
-    v = q.mu + q.sd * rn();
+    v = q.met === "tlc" ? sumaDoce() * q.sd + q.mu : Math.sqrt(-2 * Math.log(1 - r01())) * Math.cos(2 * Math.PI * r01()) * q.sd + q.mu;
   }
   return Math.max(0.15, v);
 }
@@ -742,8 +843,10 @@ function pdfOf(a){
     const { min:lo, moda:c, max:hi } = p;
     return v => (v < lo || v > hi) ? 0 : (v < c ? 2 * (v - lo) / ((hi - lo) * (c - lo || 1e-9)) : 2 * (hi - v) / ((hi - lo) * (hi - c || 1e-9)));
   }
-  if (d === "log") return v => v <= 0 ? 0 : Math.exp(-0.5 * ((Math.log(v) - p.mu) / p.sd) ** 2) / (v * p.sd * 2.506628);
+  if (d === "log"){ const { sN, mN } = logNormalAsociada(p); return v => v <= 0 ? 0 : Math.exp(-0.5 * ((Math.log(v) - mN) / sN) ** 2) / (v * sN * 2.506628); }
   if (d === "uni") return v => (v >= p.a && v <= p.b) ? 1 / (p.b - p.a) : 0;
+  if (d === "wei") return v => { const x = (v - p.gama) / p.beta; return x <= 0 ? 0 : (p.alfa / p.beta) * x ** (p.alfa - 1) * Math.exp(-(x ** p.alfa)); };
+  if (d === "erl"){ const r = p.k * p.lam, lf = lnGamma(p.k); return v => v <= 0 ? 0 : Math.exp(p.k * Math.log(r) + (p.k - 1) * Math.log(v) - r * v - lf); }
   return v => Math.exp(-0.5 * ((v - p.mu) / p.sd) ** 2) / (p.sd * 2.506628);
 }
 
@@ -774,6 +877,7 @@ function go(i){
     s.w.push(T - t0);
     s.b++;
     let d = smpl(a);
+    if (s.g.length < 20000) s.g.push(d); // salida pura del generador, para los 4 momentos (sin el reproceso por falla)
     if (R() < a.pf) d += 3;
     s.s.push(d);
     sc(T + d, () => {
@@ -966,12 +1070,16 @@ function smp(){
 
 function programarFallaFork(){
   if (!CFG.fallaFork) return;
-  sc(T + 20 + R() * 40, () => {
+  // TBF ~ Weibull(α = 1,6; β = 45 min) y TTR ~ Exponencial(media 19 min): la FORMA es la del catálogo
+  // (Weibull(1,6; 180 h) y Exp(λ = 0,35/h)), pero en la escala del escenario. Con β = 180 h la media sería
+  // 161 h y en un turno de 8 h casi nunca fallaría, así que el escenario no mostraría nada.
+  const tbf = 45 * Math.pow(-Math.log(1 - r01()), 1 / 1.6), ttr = -19 * Math.log(1 - r01());
+  sc(T + tbf, () => {
     if (!CFG.fallaFork) return;
     forkAveriado = true;
     const f0 = Escena.forks[0];
     if (f0) Escena.setForkAveriado(f0, true);
-    sc(T + 12 + R() * 14, () => {
+    sc(T + ttr, () => {
       forkAveriado = false;
       if (f0) Escena.setForkAveriado(f0, false);
       programarFallaFork();
@@ -983,7 +1091,7 @@ let fastForwarding = false;
 function resetSim(){
   R = SEMILLA === null ? Math.random : mulberry32(SEMILLA);
   T = 0; ev = [];
-  S = AR.map(() => ({ q:[], b:0, w:[], s:[], dn:0, ar:0, bi:0, qi:0, lt:0, qs:[], mq:0 }));
+  S = AR.map(() => ({ q:[], b:0, w:[], s:[], g:[], dn:0, ar:0, bi:0, qi:0, lt:0, qs:[], mq:0 }));
   AR.forEach((a, i) => { if (a.lam != null) src(i); });
   smp();
 
@@ -2862,6 +2970,8 @@ function construirPestanaParametros(i){
       ["log", "Lognormal"],
       ["exp", "Exponencial"],
       ["uni", "Uniforme"],
+      ["wei", "Weibull"],
+      ["erl", "Erlang / Gamma"],
       ["emp", "Datos cargados"]
     ].map(([v, t]) => el("option", { txt:t, attrs:Object.assign({ value:v }, (a.dist || "nor") === v ? { selected:"selected" } : {}) }))
   );
@@ -2915,9 +3025,11 @@ function construirPestanaParametros(i){
   const DEF_PAR = {
     nor:[["mu", "Media μ (min)"], ["sd", "Desviación σ (min)"]],
     tri:[["min", "Mínimo a (min)"], ["moda", "Moda c (min)"], ["max", "Máximo b (min)"]],
-    log:[["mu", "μ del logaritmo"], ["sd", "σ del logaritmo"]],
+    log:[["media", "Media μ del tiempo (min)"], ["var", "Varianza σ² del tiempo (min²)"]],
     exp:[["lam", "Tasa λ (1/min)"], ["media", "Media 1/λ (min)"]],
-    uni:[["a", "Mínimo a (min)"], ["b", "Máximo b (min)"]]
+    uni:[["a", "Mínimo a (min)"], ["b", "Máximo b (min)"]],
+    wei:[["alfa", "Forma α"], ["beta", "Escala β (min)"], ["gama", "Localización γ (min)"]],
+    erl:[["k", "Forma k (entero)"], ["lam", "Tasa λ (1/min; media 1/λ)"]]
   };
   function syncExpLock(){
     const d = a.dist || "nor";
@@ -2928,19 +3040,29 @@ function construirPestanaParametros(i){
       if (err){ resumen.textContent = "Revise los parámetros: " + err + " La simulación sigue con los últimos válidos."; resumen.style.color = "var(--rojo, #f85149)"; return; }
       resumen.style.color = "";
       resumen.textContent = "Media resultante " + a.mu.toFixed(3) + " min · desviación " + a.sd.toFixed(3) + " min" +
-        (d === "exp" ? " (en la exponencial σ = μ)." : d === "log" ? ". μ y σ son del logaritmo del tiempo." : d === "emp" ? " de los datos cargados." : ".");
+        (d === "exp" ? " (en la exponencial σ = μ)." : d === "log" ? ". μ y σ² son del tiempo; la normal asociada se muestra en la fórmula." : d === "emp" ? " de los datos cargados." : ".");
+      formula.textContent = d === "emp" ? "" : formulaDist(d, borrador && !errorParametros(d, borrador) ? borrador : a.par[d]);
+      const rho = AR_LLEGADAS(i) * a.mu / a.c;
+      aviso.textContent = rho >= 1 ? "Atención: con estos parámetros el área se satura (ρ = λ·E[S]/c = " + rho.toFixed(2) + " ≥ 1); la cola crecerá sin límite." : "";
     };
+    const formula = el("div", { cls:"formula" }), aviso = el("div", { cls:"nota aviso" });
     if (d !== "emp"){
       const p = Object.assign({}, a.par[d]); // borrador: sólo se aplica si es válido
       const inps = {};
+      if (d === "nor"){ // método del generador normal, a elegir (Tabla 3.18)
+        const selM = el("select", null, ...[["bm", "Box-Muller"], ["tlc", "Suma de 12 r_i (TLC)"]].map(([v, t]) =>
+          el("option", { txt:t, attrs:Object.assign({ value:v }, p.met === v ? { selected:"selected" } : {}) })));
+        selM.onchange = () => { p.met = a.par.nor.met = selM.value; actualizarResumen(p); if (tab === 1) drawPanel(); };
+        bloqueDist.appendChild(el("div", { cls:"campo" }, el("label", { txt:"Método del generador normal" }), selM));
+      }
       DEF_PAR[d].forEach(([k, lbl]) => {
-        const val = k === "lam" ? 1 / p.media : p[k];
+        const val = k === "lam" && d === "exp" ? 1 / p.media : p[k];
         const inp = el("input", { attrs:{ type:"number", step:"0.01", value:String(+val.toFixed(4)) } });
         inps[k] = inp;
         inp.oninput = () => {
           const v = parseFloat(inp.value);
-          if (k === "lam"){ p.media = 1 / v; if (v > 0) inps.media.value = +(1 / v).toFixed(4); }
-          else if (k === "media"){ p.media = v; if (v > 0) inps.lam.value = +(1 / v).toFixed(4); }
+          if (d === "exp" && k === "lam"){ p.media = 1 / v; if (v > 0) inps.media.value = +(1 / v).toFixed(4); }
+          else if (d === "exp" && k === "media"){ p.media = v; if (v > 0) inps.lam.value = +(1 / v).toFixed(4); }
           else p[k] = v;
           if (!errorParametros(d, p)){
             a.par[d] = Object.assign({}, p);
@@ -2954,8 +3076,25 @@ function construirPestanaParametros(i){
       [a.mu, a.sd] = momentos(d, a.par[d]);
     }
     bloqueDist.appendChild(resumen);
+    bloqueDist.appendChild(formula);
+    bloqueDist.appendChild(aviso);
     actualizarResumen();
   }
+  // Ejemplos del catálogo de American Chemical (Tabla 3.18): cargan distribución y parámetros en esta área.
+  const selCat = el("select", null, el("option", { txt:"Elegir un ejemplo…", attrs:{ value:"" } }),
+    ...CATALOGO.map((c, k) => el("option", { txt:c.nombre, attrs:{ value:String(k) } })));
+  selCat.onchange = () => {
+    const c = CATALOGO[+selCat.value];
+    if (!c) return;
+    a.dist = c.dist; a.par[c.dist] = Object.assign({}, a.par[c.dist], c.par);
+    [a.mu, a.sd] = momentos(c.dist, a.par[c.dist]);
+    selDist.value = c.dist;
+    syncExpLock();
+    if (tab === 1) drawPanel();
+    mostrarToast("Ejemplo cargado: " + c.nombre + (c.unidad !== "min" ? " (el simulador lo usa en minutos)." : "."));
+    selCat.value = "";
+  };
+  p0.insertBefore(el("div", { cls:"campo" }, el("label", { txt:"Ejemplos del catálogo (Tabla 3.18)" }), selCat), bloqueDist);
   syncExpLock();
   selDist.onchange = () => {
     a.dist = selDist.value;
@@ -3159,9 +3298,18 @@ function drawPanel(){
   up(cur);
 
   if (tab === 1){
-    const nombresDist = { nor:"Normal", tri:"Triangular", log:"Lognormal", exp:"Exponencial", uni:"Uniforme", emp:"Datos cargados" };
+    const nombresDist = { nor:"Normal", tri:"Triangular", log:"Lognormal", exp:"Exponencial", uni:"Uniforme", wei:"Weibull", erl:"Erlang / Gamma", emp:"Datos cargados" };
     $("notaDist").textContent = "Tiempo de servicio observado (barras) y curva teórica (" + (nombresDist[a.dist || "nor"]) + ").";
     hist($("h1"), s.s, "#58a6ff", pdfOf(a));
+    const d = a.dist || "nor";
+    $("formulaDist").textContent = d === "emp" ? "Remuestreo de los datos cargados (bootstrap)." : "Generador: " + formulaDist(d, a.par[d]);
+    const mm = momentosMuestra(s.g);
+    const teo = d === "emp" ? (a.emp ? momentosMuestra(a.emp) : null) : (() => { const t = momentos4(d, a.par[d]); return t && { media:t[0], var:t[1] * t[1], g1:t[2], g2:t[3] }; })();
+    const fx = v => v == null || !Number.isFinite(v) ? "—" : v.toFixed(4);
+    $("tablaMomentos").replaceChildren(
+      el("tr", null, el("th", { txt:"Momento" }), el("th", { txt:"Generador" + (mm ? " (n = " + mm.n + ")" : "") }), el("th", { txt:d === "emp" ? "Datos cargados" : "Teórico" })),
+      ...[["Media", "media"], ["Varianza (n − 1)", "var"], ["Asimetría G₁", "g1"], ["Exceso de curtosis G₂", "g2"]].map(([t, k]) =>
+        el("tr", null, el("td", { txt:t }), el("td", { txt:mm ? fx(mm[k]) : "faltan datos" }), el("td", { txt:teo ? fx(teo[k]) : "—" }))));
     hist($("h2"), s.w, "#f0883e", null);
   }
   if (tab === 2){
@@ -3319,7 +3467,7 @@ function construirWorkbook(){
     up(i);
     const s = S[i], f = (v, n) => +v.toFixed(n);
     rows.push([
-      a.n, a.dist || "nor", a.dist === "emp" ? (a.emp ? a.emp.length + " datos cargados" : "") : Object.entries(a.par[a.dist || "nor"]).map(([k, v]) => k + "=" + f(v, 4)).join("; "), f(a.mu, 3), f(a.dist === "exp" ? a.mu : a.sd, 3), a.c, s.ar, s.dn, s.q.length,
+      a.n, a.dist || "nor", a.dist === "emp" ? (a.emp ? a.emp.length + " datos cargados" : "") : Object.entries(a.par[a.dist || "nor"]).map(([k, v]) => k + "=" + (typeof v === "number" ? f(v, 4) : v)).join("; "), f(a.mu, 3), f(a.dist === "exp" ? a.mu : a.sd, 3), a.c, s.ar, s.dn, s.q.length,
       T > 0 ? f(100 * s.bi / (a.c * T), 1) : 0,
       T > 0 ? f(s.qi / T, 3) : 0,
       s.mq, f(avg(s.w), 3), f(avg(s.s), 3),
