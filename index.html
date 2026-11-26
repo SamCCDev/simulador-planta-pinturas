@@ -1,0 +1,2622 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador 3D American Chemical</title>
+<style>
+  :root{
+    --bg:#0d1117;
+    --pn:rgba(19,25,33,.88);
+    --pn-solid:#161b22;
+    --fg:#e6edf3;
+    --mu:#9aa5b1;
+    --bd:rgba(139,148,158,.30);
+    --ac:#58a6ff;
+    --azul:#2f6feb;
+    --or:#f0883e;
+    --ok:#3fb950;
+    --alerta:#d29922;
+    --mal:#f85149;
+    --ease:cubic-bezier(.23,1,.32,1);
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--fg);
+    font:13.5px/1.4 "Segoe UI",Roboto,"Helvetica Neue",system-ui,sans-serif}
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  .vidrio{background:var(--pn);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--bd);border-radius:11px;box-shadow:0 8px 28px rgba(0,0,0,.38)}
+
+  /* Guarda de arranque */
+  #fatal{display:none;position:fixed;inset:0;z-index:9999;background:#fff;color:#111;
+    padding:42px;font-family:ui-monospace,Consolas,monospace;overflow:auto}
+  #fatal h1{color:#b00;font-size:20px;margin:0 0 14px}
+  #fatal ul{line-height:1.8}
+
+  /* Barra superior */
+  #top{position:fixed;top:8px;left:10px;right:10px;z-index:12;display:flex;flex-wrap:wrap;
+    gap:4px;align-items:center;padding:6px 10px}
+  #marca{display:flex;flex-direction:column;line-height:1.12;margin-right:4px}
+  #marca b{font-size:13.5px;color:var(--fg);white-space:nowrap}
+  #marca span{font-size:10.5px;color:var(--mu);white-space:nowrap}
+  .sepV{width:1px;height:22px;background:var(--bd);margin:0 2px}
+  .grupo{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
+
+  button{font:inherit;font-size:12.5px;color:var(--fg);background:rgba(139,148,158,.12);border:1px solid var(--bd);
+    border-radius:7px;padding:4px 8px;cursor:pointer;white-space:nowrap;
+    transition:background-color .15s,border-color .15s,transform .12s var(--ease)}
+  button:hover{background:rgba(88,166,255,.18);border-color:var(--ac)}
+  button:active{transform:scale(.97)}
+  button.on{background:var(--azul);color:#fff;border-color:var(--ac);font-weight:600}
+  button.prim{background:var(--azul);color:#fff;border-color:var(--ac);font-weight:600}
+  button.prim:hover{background:#3a79f5}
+  button.exito{background:rgba(63,185,80,.2);border-color:var(--ok);color:#b7f5c0}
+  button.exito:hover{background:rgba(63,185,80,.35)}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+    outline:2px solid var(--or);outline-offset:1px}
+
+  /* Popover de ajustes rápidos */
+  #popAjustes{position:fixed;top:66px;right:10px;z-index:18;width:min(350px,calc(100vw - 20px));
+    padding:12px 14px;display:none}
+  #popAjustes.open{display:block}
+  #popAjustes h3{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--mu)}
+  .presetBtn{width:100%;text-align:left;padding:8px 10px;margin:4px 0;display:flex;flex-direction:column;gap:2px;
+    background:rgba(139,148,158,.08)}
+  .presetBtn.on{background:rgba(88,166,255,.22);border-color:var(--ac);font-weight:400}
+  .presetBtn b{font-size:12.5px}
+  .presetBtn small{font-size:11px;color:var(--mu);white-space:normal}
+
+  /* Resumen compacto inferior izquierdo y HUD */
+  #izqAbajo{position:fixed;left:10px;bottom:10px;z-index:10;display:flex;flex-direction:column;
+    gap:7px;max-width:min(410px,calc(100vw - 20px));pointer-events:none}
+  #izqAbajo .vidrio{pointer-events:auto}
+  #resumenPlanta{padding:9px 12px;font-variant-numeric:tabular-nums}
+  #resCab{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+  #resCab b{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--mu)}
+  #resGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  .kpiBox{background:rgba(139,148,158,.08);border:1px solid var(--bd);border-radius:7px;padding:5px 7px}
+  .kpiBox span{display:block;font-size:10.5px;color:var(--mu)}
+  .kpiBox b{font-size:14px}
+  #andenesMini{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;color:var(--mu)}
+  .chipAnden{padding:2px 7px;border-radius:999px;border:1px solid var(--bd);background:rgba(139,148,158,.08)}
+  .chipAnden.libre{border-color:rgba(63,185,80,.45);color:var(--ok)}
+  .chipAnden.ocupado{border-color:rgba(240,136,62,.5);color:var(--or)}
+  .chipAnden.fuera{border-color:rgba(248,81,73,.5);color:var(--mal)}
+  #grafColaWrap{height:64px;margin-top:6px}
+  #grafCola{width:100%;height:100%}
+  #hud{padding:8px 12px;font-variant-numeric:tabular-nums}
+  #hud small{color:var(--mu);display:block;margin-top:2px}
+  #toast{margin-top:5px;font-size:12px;color:var(--ok);display:none}
+  #toast.vis{display:block}
+
+  /* Etiquetas flotantes sobre las áreas */
+  #labs{position:fixed;inset:0;pointer-events:none;z-index:8}
+  .lab{position:fixed;transform:translate(-50%,-50%);pointer-events:auto;border-radius:999px;
+    padding:3px 8px;font-size:11px;font-weight:600;white-space:nowrap;
+    background:rgba(19,25,33,.90);color:var(--fg);border:1px solid var(--bd);
+    box-shadow:0 4px 12px rgba(0,0,0,.35)}
+  .lab:hover{background:var(--azul);border-color:var(--ac);color:#fff}
+  .lab.sel{border-color:var(--or);box-shadow:0 0 0 2px rgba(240,136,62,.35)}
+
+  /* Panel lateral por área */
+  #pan{position:fixed;top:66px;right:10px;bottom:10px;width:min(410px,calc(100vw - 20px));z-index:15;
+    transform:translateX(110%);transition:transform .22s var(--ease);display:flex;flex-direction:column;
+    padding:12px 14px;overflow:hidden}
+  #pan.open{transform:none}
+  #panCab{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+  #pt{margin:0;font-size:17px;font-weight:600}
+  #tb{display:flex;gap:4px;padding:3px;background:rgba(139,148,158,.1);border-radius:8px;margin-bottom:10px}
+  #tb button{flex:1;border:0;background:transparent;color:var(--mu);padding:6px 8px;font-weight:600}
+  #tb button.on{background:var(--pn-solid);color:var(--fg);border-radius:6px}
+  #panBody{flex:1;overflow-y:auto;padding-right:2px;scrollbar-width:thin}
+
+  .campo{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:7px 0;font-size:13px}
+  .campo input,.campo select{width:128px;font:inherit;color:var(--fg);background:var(--pn-solid);
+    border:1px solid var(--bd);border-radius:6px;padding:4px 7px}
+  .campo input:disabled{opacity:.55;cursor:not-allowed}
+  .nota{color:var(--mu);font-size:11.5px;line-height:1.45;margin:4px 0 8px}
+
+  /* Bloque CSV prioritario */
+  .bloqueCSV{margin:10px 0;padding:10px;border-radius:9px;background:rgba(88,166,255,.07);
+    border:1px solid rgba(88,166,255,.28)}
+  .bloqueCSV h4{margin:0 0 5px;font-size:12.5px;color:var(--ac)}
+  #em{width:100%;font:12px/1.35 ui-monospace,Consolas,monospace;color:var(--fg);
+    background:var(--pn-solid);border:1px solid var(--bd);border-radius:6px;padding:6px;resize:vertical}
+  #ef{width:100%;margin:6px 0;font-size:12px;color:var(--mu)}
+  #csvColRow{display:none;justify-content:space-between;align-items:center;gap:8px;margin:6px 0}
+  #csvColRow.vis{display:flex}
+  #csvCol{flex:1;font:inherit;color:var(--fg);background:var(--pn-solid);border:1px solid var(--bd);
+    border-radius:6px;padding:4px 7px}
+  .accionesCSV{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px}
+  #ec{margin-top:7px;font-size:12px;line-height:1.4;padding:6px 8px;border-radius:6px;display:none}
+  #ec.ok{display:block;background:rgba(63,185,80,.14);border:1px solid rgba(63,185,80,.45);color:#b7f5c0}
+  #ec.err{display:block;background:rgba(248,81,73,.14);border:1px solid rgba(248,81,73,.5);color:#ffb4ae}
+
+  #pan canvas{width:100%;height:auto;display:block;margin:4px 0 10px;background:#0b1118;
+    border:1px solid var(--bd);border-radius:8px}
+  #rs{width:100%;border-collapse:collapse;margin-bottom:10px;font-variant-numeric:tabular-nums}
+  #rs td{padding:4px 0;border-bottom:1px solid rgba(139,148,158,.18);font-size:12.5px}
+  #rs td+td{text-align:right;font-weight:600}
+
+  /* Modales propios (Excel confirmación y Ayuda) */
+  .modal{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;
+    background:rgba(1,4,9,.55);padding:16px}
+  .modal.abierto{display:flex}
+  .modal .caja{width:min(510px,100%);padding:20px 22px}
+  .modal h2{margin:0 0 8px;font-size:18px}
+  .modal p{margin:0 0 10px;font-size:13px;color:var(--mu);line-height:1.5}
+  .listaHojas{margin:10px 0 14px;padding:0;list-style:none;display:grid;gap:6px}
+  .listaHojas li{padding:6px 9px;border-radius:7px;background:rgba(139,148,158,.08);
+    border:1px solid var(--bd);font-size:12.5px;display:flex;justify-content:space-between;gap:8px}
+  .accionesModal{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+  @media (max-width:960px){
+    #resumenPlanta{display:none}
+    #top{gap:4px}
+  }
+</style>
+</head>
+<body>
+<div id="pantallaCarga" style="position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0f172a;color:#e2e8f0;font:16px/1.5 system-ui,sans-serif;text-align:center;padding:16px">
+<div style="font-size:22px;font-weight:700">Simulador 3D · Planta de pinturas</div>
+<div style="font-size:14px;color:#94a3b8">Proyecto académico de Optimización Empresarial III (Univalle). Caso de estudio: American Chemical S.R.L.</div>
+<div style="width:220px;height:6px;border-radius:3px;background:#1e293b;overflow:hidden"><div style="width:40%;height:100%;background:#38bdf8;animation:cargaBarra 1.1s ease-in-out infinite alternate"></div></div>
+<div id="cargaTexto" style="font-size:14px;color:#94a3b8">Cargando el motor 3D y los datos…</div>
+<style>@keyframes cargaBarra{from{transform:translateX(-60%)}to{transform:translateX(210%)}}</style></div>
+<script>window.addEventListener("load",function(){setTimeout(function(){var p=document.getElementById("pantallaCarga");if(p){p.style.transition="opacity .4s";p.style.opacity="0";setTimeout(function(){p.remove()},450);}},600);});</script>
+
+
+<div id="fatal">
+  <h1>No se pudieron cargar las librerías necesarias</h1>
+  <p>Esta simulación requiere librerías desde CDN con versión fija. Elementos faltantes:</p>
+  <ul id="fatalLista"></ul>
+  <p>Verifique su conexión a internet o que ningún proxy bloquee <code>cdn.jsdelivr.net</code>.</p>
+</div>
+
+<canvas id="c"></canvas>
+<div id="labs"></div>
+
+<header id="top" class="vidrio">
+  <div id="marca">
+    <b>American Chemical S.R.L.</b>
+    <span>Planta de pinturas · Simulación 3D</span>
+  </div>
+  <div class="grupo">
+    <button id="bE" class="on">Exterior</button>
+    <button id="bP">Vista en planta</button>
+    <button id="bW">Recorrer</button>
+    <button id="bR">Quitar techo</button>
+  </div>
+  <span class="sepV"></span>
+  <div class="grupo">
+    <button id="bPa">Pausa</button>
+    <button data-s="1" class="on">1x</button>
+    <button data-s="5">5x</button>
+    <button data-s="20">20x</button>
+    <button data-s="60">60x</button>
+    <button id="b8h" title="Avanza 480 minutos (8 horas) de forma continua">Simular turno de 8 h</button>
+    <button id="bRe">Reiniciar</button>
+  </div>
+  <span style="flex:1"></span>
+  <div class="grupo">
+    <button id="bAj">Ajustes rápidos</button>
+    <button id="bX" class="exito">Exportar a Excel</button>
+    <button id="bCSV" title="Descargar registro de camiones en CSV">CSV</button>
+    <button id="bSnd" title="Activar o silenciar sonido">🔊</button>
+    <button id="bAyuda" title="Instrucciones de uso">?</button>
+  </div>
+</header>
+
+<div id="popAjustes" class="vidrio">
+  <h3>Ajustes rápidos de operación</h3>
+  <div id="listaAjustes"></div>
+  <p class="nota" style="margin-top:8px">También puede modificar cualquier parámetro, distribución o archivo CSV en vivo desde el panel de cada área.</p>
+</div>
+
+<div id="izqAbajo">
+  <section id="resumenPlanta" class="vidrio">
+    <div id="resCab">
+      <b>Estado de planta y despacho</b>
+      <button id="bToggleRes" style="padding:2px 8px;font-size:11px">Ocultar</button>
+    </div>
+    <div id="resCuerpo">
+      <div id="resGrid">
+        <div class="kpiBox"><span>Patio camiones</span><b id="kPatio">0 / 8</b></div>
+        <div class="kpiBox"><span>Despachados</span><b id="kCam">0 cam.</b></div>
+        <div class="kpiBox"><span>Paletas / cam.</span><b id="kN">6</b></div>
+        <div class="kpiBox"><span>Ingresos desp.</span><b id="kUSD">$0</b></div>
+      </div>
+      <div id="andenesMini"></div>
+      <div id="grafColaWrap"><canvas id="grafCola"></canvas></div>
+    </div>
+  </section>
+  <div id="hud" class="vidrio">
+    <div id="hudMain"></div>
+    <small id="hudHelp"></small>
+    <div id="toast"></div>
+  </div>
+</div>
+
+<aside id="pan" class="vidrio" aria-label="Panel del área">
+  <div id="panCab">
+    <h2 id="pt">Área</h2>
+    <button id="px" aria-label="Cerrar panel">Cerrar</button>
+  </div>
+  <div id="tb" role="tablist">
+    <button data-t="0" class="on" role="tab">Parámetros</button>
+    <button data-t="1" role="tab">Distribuciones</button>
+    <button data-t="2" role="tab">Resultados</button>
+  </div>
+  <div id="panBody">
+    <div id="p0"></div>
+    <div id="p1" hidden>
+      <div class="nota" id="notaDist">Tiempo de servicio observado (barras) y curva teórica seleccionada (línea naranja).</div>
+      <canvas id="h1" width="360" height="185"></canvas>
+      <div class="nota">Tiempo de espera en cola observado (min).</div>
+      <canvas id="h2" width="360" height="175"></canvas>
+    </div>
+    <div id="p2" hidden>
+      <table id="rs"></table>
+      <div class="nota">Longitud de cola en el tiempo (un punto por minuto simulado).</div>
+      <canvas id="h3" width="360" height="160"></canvas>
+    </div>
+  </div>
+</aside>
+
+<!-- Modal de confirmación para exportar a Excel -->
+<div id="modalExcel" class="modal" role="dialog" aria-modal="true" aria-labelledby="titExcel">
+  <div class="caja vidrio">
+    <h2 id="titExcel">Confirmar exportación a Excel</h2>
+    <p id="descExcel">Se generará el archivo <b>simulacion_american_chemical.xlsx</b> con las siguientes cuatro hojas:</p>
+    <ul class="listaHojas" id="listaHojasExcel"></ul>
+    <p class="nota" id="notaExcel"></p>
+    <div class="accionesModal">
+      <button id="btnCancelExcel">Cancelar</button>
+      <button id="btnConfirmExcel" class="prim">Confirmar y descargar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de ayuda -->
+<div id="modalAyuda" class="modal" role="dialog" aria-modal="true" aria-labelledby="titAyuda">
+  <div class="caja vidrio">
+    <h2 id="titAyuda">Guía rápida del simulador</h2>
+    <p>Planta completa de pinturas de <b>American Chemical S.R.L.</b> con 9 áreas conectadas desde recepción y dispersión hasta despacho en andenes, caseta de entrada y báscula de salida.</p>
+    <p><b>Navegación:</b> Use <b>Exterior</b> (arrastre para girar, rueda para acercar), <b>Vista en planta</b> (cámara cenital sin techo), <b>Quitar techo</b> o <b>Recorrer</b> (camine con <b>WASD</b> o las flechas, mire con el ratón y presione <b>E</b> para abrir el panel del área donde se encuentre).</p>
+    <p><b>Datos CSV y distribuciones:</b> Haga clic en cualquier área para abrir su panel, elegir la distribución estadística (Normal, Triangular, Lognormal, Exponencial, Uniforme o Datos cargados) y pegar o cargar archivos <b>.csv</b> o <b>.txt</b> con validación automática.</p>
+    <div class="accionesModal">
+      <button id="btnOkAyuda" class="prim">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"
+        integrity="sha384-CI3ELBVUz9XQO+97x6nwMDPosPR5XvsxW2ua7N1Xeygeh1IxtgqtCkGfQY9WWdHu"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"
+        integrity="sha384-wagZhIFgY4hD+7awjQjR4e2E294y6J2HSnd8eTNc15ZubTeQeVRZwhQJ+W6hnBsf"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"
+        integrity="sha384-dug+JxfBvklEQdJ4AYuBBAIScUz0bVN73xpy273gcAwHjb3qI0fXmuYNaNfdyYJG"
+        crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"
+        integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"
+        crossorigin="anonymous"></script>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   0. GUARDA DE ARRANQUE Y UTILIDADES DOM SEGURAS (SIN innerHTML)
+   ========================================================================= */
+const $ = id => document.getElementById(id);
+
+function el(tag, opts, ...children){
+  const n = document.createElement(tag);
+  if (opts){
+    if (opts.cls) n.className = opts.cls;
+    if (opts.txt != null) n.textContent = String(opts.txt);
+    if (opts.id) n.id = opts.id;
+    if (opts.attrs) Object.keys(opts.attrs).forEach(k => n.setAttribute(k, opts.attrs[k]));
+    if (opts.style) Object.assign(n.style, opts.style);
+  }
+  for (const c of children){
+    if (c == null) continue;
+    n.appendChild(typeof c === "string" || typeof c === "number" ? document.createTextNode(String(c)) : c);
+  }
+  return n;
+}
+
+(function guardaArranque(){
+  const faltan = [];
+  if (typeof THREE === "undefined") faltan.push("three.min.js (0.128.0)");
+  else if (typeof THREE.OrbitControls !== "function") faltan.push("OrbitControls.js (0.128.0)");
+  if (typeof Chart === "undefined") faltan.push("chart.umd.js (4.4.1)");
+  if (typeof XLSX === "undefined") faltan.push("xlsx.full.min.js (0.18.5)");
+  if (!faltan.length) return;
+  const ul = $("fatalLista");
+  faltan.forEach(f => ul.appendChild(el("li", { txt: f })));
+  $("fatal").style.display = "block";
+  throw new Error("Librerías faltantes: " + faltan.join(", "));
+})();
+
+/* =========================================================================
+   1. CATÁLOGO DE PINTURAS Y PARÁMETROS DE LAS 9 ÁREAS
+   ========================================================================= */
+const PRODUCTOS = [
+  { id:"latex",   nombre:"Látex Premium",      usd:600, ton:4, color:0x4a90d9 },
+  { id:"esmalte", nombre:"Esmalte Sintético",  usd:800, ton:5, color:0xe8a33d },
+  { id:"laca",    nombre:"Laca Automotriz",    usd:400, ton:3, color:0xc0392b },
+  { id:"barniz",  nombre:"Barniz para Madera", usd:300, ton:2, color:0x8b5a2b },
+  { id:"thinner", nombre:"Thinner Acrílico",   usd:950, ton:6, color:0x7f8c8d }
+];
+const ECOCHEM = { id:"ecochem", nombre:"EcoChem", usd:850, ton:5, color:0x2ecc71 };
+
+const LINEAS = [
+  { id:1, corto:"Látex",    p:0.40, color:0x4a90d9, prods:["latex","ecochem"] },
+  { id:2, corto:"Esmaltes", p:0.35, color:0xe8a33d, prods:["esmalte","laca","barniz"] },
+  { id:3, corto:"Thinner",  p:0.25, color:0x7f8c8d, prods:["thinner"] }
+];
+
+// Áreas en coordenadas XZ dentro de la nave [x0, z0, x1, z1].
+// Nave principal: x in [14, 80], z in [-21, 21]; pasillo central z in [-3, 3].
+const AR_BASE = [
+  { n:"Recepción y dispersión",       r:[54,-21,67,-3],  k:0x2fb5d6, lam:0.80, mu:2.00, sd:0.40, c:2, pf:0.02, nx:[[1,1]] },
+  { n:"Molienda y tinteo",            r:[67,-21,80,-3],  k:0x7a8cff, lam:null, mu:2.60, sd:0.50, c:3, pf:0.03, nx:[[2,1]] },
+  { n:"Envasado y tapado",            r:[67,  3,80,21],  k:0x39c08f, lam:null, mu:3.20, sd:0.60, c:4, pf:0.03, nx:[[3,1],[7,0.10]] },
+  { n:"Etiquetado",                   r:[54,  3,67,21],  k:0xf2c230, lam:null, mu:1.60, sd:0.30, c:2, pf:0.02, nx:[[4,1]] },
+  { n:"Empaque y paletizado",         r:[41,  3,54,21],  k:0xe8741c, lam:null, mu:2.20, sd:0.40, c:3, pf:0.02, nx:[[5,1]] },
+  { n:"Almacén de producto terminado",r:[28,  3,41,21],  k:0xb07cd9, lam:null, mu:0.80, sd:0.20, c:2, pf:0.01, nx:[[6,1]] },
+  { n:"Despacho y andén",             r:[14,-21,28,21],  k:0xe85c7a, lam:null, mu:1.80, sd:0.35, c:3, pf:0.02, nx:[] },
+  { n:"Laboratorio de calidad",       r:[28,-21,41,-3],  k:0x9fb3c0, lam:null, mu:5.00, sd:1.00, c:1, pf:0.00, nx:[] },
+  { n:"Oficinas (pedidos)",           r:[41,-21,54,-3],  k:0xc9a77c, lam:0.35, mu:2.40, sd:0.50, c:2, pf:0.00, nx:[] }
+];
+
+const AR = AR_BASE.map(a => Object.assign({}, a, { dist:"nor", emp:null, empCol:null }));
+
+const AJUSTES_RAPIDOS = [
+  { id:0, nombre:"Línea base (estándar)", desc:"Operación normal: 2 andenes activos, 1 montacargas y 6 paletas por camión.",
+    lam0:0.80, andenes:2, forks:1, caidos:[], eco:false, prio:false, fallaFork:false, N:6, pfDesp:0.02 },
+  { id:1, nombre:"Expansión EcoChem (+40 % demanda)", desc:"Aumentan los pedidos 40 %, se habilita EcoChem y operan 2 montacargas.",
+    lam0:1.12, andenes:2, forks:2, caidos:[], eco:true, prio:false, fallaFork:false, N:6, pfDesp:0.02 },
+  { id:2, nombre:"Falla en Andén 2", desc:"El Andén 2 queda fuera de servicio con cinta de mantenimiento.",
+    lam0:0.80, andenes:2, forks:1, caidos:[1], eco:false, prio:false, fallaFork:false, N:6, pfDesp:0.08 },
+  { id:3, nombre:"Prioridad flota propia (AC)", desc:"Los camiones azules AC adelantan a los clientes en la cola del patio.",
+    lam0:0.80, andenes:2, forks:1, caidos:[], eco:false, prio:true, fallaFork:false, N:6, pfDesp:0.02 },
+  { id:4, nombre:"Ampliación: tercer andén", desc:"Se incorpora el Andén 3 y 2 montacargas bajo demanda expandida.",
+    lam0:1.12, andenes:3, forks:2, caidos:[], eco:true, prio:false, fallaFork:false, N:6, pfDesp:0.02 },
+  { id:5, nombre:"Contingencia de montacargas", desc:"Falla periódica en el montacargas principal con reparación en pista.",
+    lam0:0.80, andenes:2, forks:1, caidos:[], eco:false, prio:false, fallaFork:true, N:6, pfDesp:0.04 }
+];
+
+const CFG = {
+  paletasPorCamion: 6,
+  andenesTotal: 2,
+  forksTotal: 1,
+  caidos: [],
+  eco: false,
+  prioFlota: false,
+  fallaFork: false,
+  ajusteActual: 0
+};
+
+const K_COLA_PATIO = 8;
+const PROP_FLOTA = 0.60;
+
+/* =========================================================================
+   2. VALIDADOR Y PARSER ESTRICTO DE CSV / TXT (PRIORIDAD #1)
+   ========================================================================= */
+const RE_NUM = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+const RE_COMA_DEC = /^[+-]?\d+,\d+$/;
+
+function parseNumeroEstricto(raw, permitirComaDecimal){
+  const s = String(raw == null ? "" : raw).trim();
+  if (!s) return { ok:false, motivo:"celda vacía" };
+  let norm = s;
+  if (permitirComaDecimal && RE_COMA_DEC.test(s)) norm = s.replace(",", ".");
+  if (!RE_NUM.test(norm)) return { ok:false, motivo:'texto no numérico («' + s.slice(0, 32) + '»)' };
+  const v = Number(norm);
+  if (!Number.isFinite(v)) return { ok:false, motivo:'número fuera de rango («' + s.slice(0, 32) + '»)' };
+  if (v <= 0) return { ok:false, motivo:"valor menor o igual a 0 (" + v + ")" };
+  return { ok:true, valor:v };
+}
+
+function dividirFilaCSV(linea, delim){
+  const out = [];
+  let cur = "", enComillas = false;
+  for (let i = 0; i < linea.length; i++){
+    const ch = linea[i];
+    if (ch === '"'){
+      if (enComillas && linea[i + 1] === '"'){ cur += '"'; i++; }
+      else enComillas = !enComillas;
+    } else if (ch === delim && !enComillas){
+      out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  if (enComillas) return { error:"Comillas sin cerrar." };
+  out.push(cur.trim());
+  return { celdas:out };
+}
+
+function detectarDelimitador(lineas){
+  const muestra = lineas.slice(0, 10);
+  const contar = d => muestra.reduce((acc, l) => {
+    let q = false, c = 0;
+    for (let i = 0; i < l.raw.length; i++){
+      const ch = l.raw[i];
+      if (ch === '"') q = !q;
+      else if (ch === d && !q) c++;
+    }
+    return acc + c;
+  }, 0);
+  const cSemi = contar(";"), cTab = contar("\t"), cComa = contar(",");
+  if (cTab > 0 && cTab >= cSemi && cTab >= cComa) return "\t";
+  if (cSemi > 0 && cSemi >= cComa) return ";";
+  if (cComa > 0) return ",";
+  return null;
+}
+
+function parsearDatosServicio(textoCrudo, nombreArchivo){
+  if (typeof textoCrudo !== "string") return { ok:false, error:"No se pudo leer el contenido." };
+  if (/\x00/.test(textoCrudo)) return { ok:false, error:"El archivo parece binario o contiene caracteres nulos no permitidos." };
+  const limpio = textoCrudo.replace(/^\uFEFF/, "");
+  const todas = limpio.split(/\r?\n/);
+  const lineas = [];
+  todas.forEach((l, idx) => {
+    const t = l.trim();
+    if (t.length > 0 && !t.startsWith("#")) lineas.push({ num:idx + 1, raw:t });
+  });
+  if (!lineas.length) return { ok:false, error:"El archivo o texto está vacío (no contiene datos)." };
+  if (lineas.length > 50000) return { ok:false, error:"El archivo supera el límite de 50 000 filas." };
+
+  const esCSV = nombreArchivo ? /\.csv$/i.test(nombreArchivo) : false;
+  const delim = detectarDelimitador(lineas);
+
+  // Caso 1: una sola línea (lista pegada o archivo de 1 línea)
+  if (lineas.length === 1){
+    const raw = lineas[0].raw;
+    // Si tiene separadores ; o , o espacios
+    const sep = delim === ";" ? /;+/ : delim === "\t" ? /\t+/ : /[\s,;]+/;
+    const tokens = raw.split(sep).map(x => x.trim()).filter(x => x.length > 0);
+    if (tokens.length < 2){
+      if (tokens.length === 1){
+        const chk = parseNumeroEstricto(tokens[0], !esCSV);
+        if (!chk.ok) return { ok:false, error:"Dato inválido en la fila 1: " + chk.motivo + ". Se requieren al menos 2 observaciones válidas." };
+      }
+      return { ok:false, error:"Se requieren al menos 2 observaciones válidas para calcular la desviación muestral." };
+    }
+    const vals = [];
+    for (let i = 0; i < tokens.length; i++){
+      const p = parseNumeroEstricto(tokens[i], delim === ";" || !delim);
+      if (!p.ok){
+        return { ok:false, error:"Valor inválido en el elemento " + (i + 1) + ": " + p.motivo + ". Todos los valores deben ser números mayores que 0." };
+      }
+      vals.push(p.valor);
+    }
+    return { ok:true, columnas:[{ nombre:"Tiempos pegados", valores:vals, valida:true, error:null }], preferida:0 };
+  }
+
+  // Caso 2: múltiples líneas con delimitador tabular (, ; \t) o archivo .csv
+  if (delim){
+    const filas = [];
+    for (const l of lineas){
+      const r = dividirFilaCSV(l.raw, delim);
+      if (r.error) return { ok:false, error:"Error de formato en la fila " + l.num + ": " + r.error };
+      filas.push({ num:l.num, celdas:r.celdas });
+    }
+    const nCols = filas[0].celdas.length;
+    for (let i = 1; i < filas.length; i++){
+      if (filas[i].celdas.length !== nCols){
+        return {
+          ok:false,
+          error:"Columnas desbalanceadas en la fila " + filas[i].num + ": se esperaban " + nCols + " columnas y se encontraron " + filas[i].celdas.length + "."
+        };
+      }
+    }
+
+    const permitirComaDec = delim !== ",";
+    // Determinar si la fila 0 es encabezado (si al menos una celda no es número estricto)
+    const fila0TieneTexto = filas[0].celdas.some(c => !RE_NUM.test(permitirComaDec && RE_COMA_DEC.test(c) ? c.replace(",", ".") : c));
+    const inicioDatos = fila0TieneTexto ? 1 : 0;
+    const filasDatos = filas.slice(inicioDatos);
+
+    if (filasDatos.length < 2){
+      return { ok:false, error:"Se requieren al menos 2 observaciones válidas (se encontró " + filasDatos.length + ")." };
+    }
+
+    const analisisCols = [];
+    for (let c = 0; c < nCols; c++){
+      const nombre = fila0TieneTexto ? (filas[0].celdas[c] || ("Columna " + (c + 1))) : ("Columna " + (c + 1));
+      const vals = [];
+      let primerError = null;
+      let tuvoNumero = false;
+      for (let r = 0; r < filasDatos.length; r++){
+        const res = parseNumeroEstricto(filasDatos[r].celdas[c], permitirComaDec);
+        if (res.ok){
+          vals.push(res.valor);
+          tuvoNumero = true;
+        } else {
+          // Detectar si tenía número <= 0
+          const rawStr = filasDatos[r].celdas[c];
+          const norm = permitirComaDec && RE_COMA_DEC.test(rawStr) ? rawStr.replace(",", ".") : rawStr;
+          if (RE_NUM.test(norm)) tuvoNumero = true;
+          if (!primerError) primerError = "fila " + filasDatos[r].num + ": " + res.motivo;
+        }
+      }
+      analisisCols.push({
+        nombre,
+        valores: vals,
+        valida: primerError === null && vals.length >= 2,
+        tuvoNumero,
+        error: primerError
+      });
+    }
+
+    const validas = analisisCols.filter(c => c.valida);
+    const conErrorNumerico = analisisCols.filter(c => !c.valida && c.tuvoNumero);
+    const pareceTiempo = c => /tiempo|servic|durac|min|tiemp|muestra|obs|valor/i.test(c.nombre);
+
+    if (!validas.length){
+      const ref = conErrorNumerico.find(pareceTiempo) || conErrorNumerico[0] || analisisCols[0];
+      return {
+        ok:false,
+        error:'Error en la columna «' + ref.nombre + '» (' + (ref.error || "sin datos numéricos válidos") + "). Ninguna columna cumple los requisitos."
+      };
+    }
+
+    // Si una columna explícitamente de tiempos tiene errores (p.ej. texto o <=0), rechazar el archivo malo en vez de ocultarlo tras otra columna como "id".
+    const colTiempoRota = conErrorNumerico.find(pareceTiempo);
+    if (colTiempoRota){
+      return {
+        ok:false,
+        error:'La columna «' + colTiempoRota.nombre + '» contiene un error (' + colTiempoRota.error + "). Corrija el archivo antes de cargarlo."
+      };
+    }
+
+    // Si hay alguna columna con mezcla de números y texto/errores (celda corrupta), rechazar en vez de ocultarla detrás de otra columna.
+    if (conErrorNumerico.length > 0 && (validas.length <= 1 || conErrorNumerico.some(c => /texto no numérico/.test(c.error || "")))){
+      return {
+        ok:false,
+        error:'Error en la columna «' + conErrorNumerico[0].nombre + '» (' + conErrorNumerico[0].error + ")."
+      };
+    }
+
+    // Elegir columnas disponibles para mostrar (solo las válidas)
+    let pref = validas.findIndex(c => pareceTiempo(c) && !/espera|cola|wait/i.test(c.nombre));
+    if (pref < 0) pref = validas.findIndex(pareceTiempo);
+    if (pref < 0) pref = validas.findIndex(c => !/^(id|lote|n|num|indice|index)$/i.test(c.nombre));
+    if (pref < 0) pref = 0;
+
+    return { ok:true, columnas:validas, preferida:pref };
+  }
+
+  // Caso 3: Múltiples líneas sin comas/punto y coma/tab (lista vertical o separada por espacios)
+  const tokensPorLinea = lineas.map(l => ({ num:l.num, toks:l.raw.split(/\s+/).filter(Boolean) }));
+  let inicio = 0;
+  let nombreCol = "Valores";
+  if (tokensPorLinea[0].toks.length === 1){
+    const test0 = parseNumeroEstricto(tokensPorLinea[0].toks[0], true);
+    if (!test0.ok){
+      nombreCol = tokensPorLinea[0].toks[0];
+      inicio = 1;
+    }
+  }
+  const vals = [];
+  for (let i = inicio; i < tokensPorLinea.length; i++){
+    for (const tok of tokensPorLinea[i].toks){
+      const p = parseNumeroEstricto(tok, true);
+      if (!p.ok){
+        return { ok:false, error:"Dato inválido en la fila " + tokensPorLinea[i].num + ": " + p.motivo + "." };
+      }
+      vals.push(p.valor);
+    }
+  }
+  if (vals.length < 2){
+    return { ok:false, error:"Se requieren al menos 2 observaciones válidas (se encontró " + vals.length + ")." };
+  }
+  return { ok:true, columnas:[{ nombre:nombreCol, valores:vals, valida:true, error:null }], preferida:0 };
+}
+
+/* =========================================================================
+   3. ALEATORIEDAD, DISTRIBUCIONES Y MOTOR DES DE 9 ÁREAS + CAMIONES
+   ========================================================================= */
+const R = Math.random;
+const rn = () => {
+  let u = 0;
+  while (!u) u = R();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.2831853 * R());
+};
+const avg = d => d.length ? d.reduce((a, b) => a + b, 0) / d.length : 0;
+const stdMuestral = d => {
+  if (d.length < 2) return 0;
+  const m = avg(d);
+  return Math.sqrt(d.reduce((a, x) => a + (x - m) * (x - m), 0) / (d.length - 1));
+};
+
+function elegirProducto(){
+  const u = R();
+  let ac = 0, lin = LINEAS[LINEAS.length - 1];
+  for (const l of LINEAS){ ac += l.p; if (u < ac){ lin = l; break; } }
+  const pool = PRODUCTOS.concat(CFG.eco ? [ECOCHEM] : []).filter(p => lin.prods.indexOf(p.id) >= 0);
+  const p = pool[Math.floor(R() * pool.length)] || PRODUCTOS[0];
+  return { prod:p, linea:lin };
+}
+
+let S = [], T = 0, ev = [], sp = 1, paused = false;
+let camionesLog = [], seqCam = 0, nextTruckCheck = 0;
+let paletasListasDespacho = 0, paletasEnProduccion = 0;
+let camionesDespachados = 0, camionesRechazados = 0, ingresosUSD = 0;
+let colaPatio = []; // camiones esperando en el patio de 8 lugares
+let histColaPatio = [], histPatioMin = [];
+let nextForkFaultT = Infinity;
+
+const sc = (t, f) => {
+  let i = ev.length;
+  while (i > 0 && ev[i - 1].t > t) i--;
+  ev.splice(i, 0, { t, f });
+};
+
+const up = i => {
+  const s = S[i];
+  s.bi += s.b * (T - s.lt);
+  s.qi += s.q.length * (T - s.lt);
+  s.lt = T;
+};
+
+function smpl(a){
+  const m = a.mu, s = Math.max(0, a.sd), d = a.dist || "nor";
+  let v = m;
+  if (d === "tri"){
+    const h = Math.sqrt(6) * s, u = R();
+    const lo = Math.max(0.1, m - h), hi = m + h, F = (m - lo) / (hi - lo || 1);
+    v = u < F ? lo + Math.sqrt(u * (hi - lo) * (m - lo)) : hi - Math.sqrt((1 - u) * (hi - lo) * (hi - m));
+  } else if (d === "log"){
+    const q = Math.log(1 + (s / Math.max(m, 0.1)) ** 2);
+    v = Math.exp(Math.log(Math.max(m, 0.1)) - q / 2 + Math.sqrt(q) * rn());
+  } else if (d === "exp"){
+    v = -m * Math.log(1 - Math.min(0.999999, R()));
+  } else if (d === "uni"){
+    const h = Math.sqrt(3) * s;
+    v = Math.max(0.1, m - h) + (m + h - Math.max(0.1, m - h)) * R();
+  } else if (d === "emp" && a.emp && a.emp.length){
+    v = a.emp[Math.floor(R() * a.emp.length)];
+  } else {
+    v = m + s * rn();
+  }
+  return Math.max(0.15, v);
+}
+
+function pdfOf(a){
+  const m = a.mu, s = a.sd, d = a.dist || "nor";
+  if (d === "emp") return null;
+  if (d === "exp") return m > 0 ? (v => v < 0 ? 0 : Math.exp(-v / m) / m) : null;
+  if (!(s > 0)) return null;
+  if (d === "tri"){
+    const h = Math.sqrt(6) * s, lo = Math.max(0.1, m - h), hi = m + h;
+    if (hi <= lo || m <= lo) return null;
+    return v => (v < lo || v > hi) ? 0 : (v < m ? 2 * (v - lo) / ((hi - lo) * (m - lo)) : 2 * (hi - v) / ((hi - lo) * (hi - m)));
+  }
+  if (d === "log"){
+    const q = Math.log(1 + (s / Math.max(m, 0.1)) ** 2), u = Math.log(Math.max(m, 0.1)) - q / 2, g = Math.sqrt(q);
+    if (!(g > 0)) return null;
+    return v => v <= 0 ? 0 : Math.exp(-0.5 * ((Math.log(v) - u) / g) ** 2) / (v * g * 2.506628);
+  }
+  if (d === "uni"){
+    const h = Math.sqrt(3) * s, lo = Math.max(0.1, m - h), hi = m + h;
+    return v => (v >= lo && v <= hi) ? 1 / (hi - lo) : 0;
+  }
+  return v => Math.exp(-0.5 * ((v - m) / s) ** 2) / (s * 2.506628);
+}
+
+function src(i){
+  const a = AR[i];
+  if (a.lam > 0){
+    arr(i);
+    sc(T - Math.log(1 - Math.min(0.999999, R())) / a.lam, () => src(i));
+  } else {
+    sc(T + 1, () => src(i));
+  }
+}
+
+function arr(i){
+  const s = S[i];
+  up(i);
+  s.ar++;
+  s.q.push(T);
+  s.mq = Math.max(s.mq, s.q.length);
+  go(i);
+}
+
+function go(i){
+  const a = AR[i], s = S[i];
+  while (s.b < a.c && s.q.length){
+    up(i);
+    const t0 = s.q.shift();
+    s.w.push(T - t0);
+    s.b++;
+    let d = smpl(a);
+    if (R() < a.pf) d += 3;
+    s.s.push(d);
+    sc(T + d, () => {
+      up(i);
+      s.b--;
+      s.dn++;
+      a.nx.forEach(([j, p]) => { if (p >= 1 || R() < p) arr(j); });
+      if (i === 4) onEmpaqueDone();
+      if (i === 6) onDespachoPalletDone();
+      go(i);
+    });
+  }
+}
+
+// Lógica DES de camiones en andenes acoplada a Despacho (N paletas por camión)
+const andenesState = []; // { i, estado: 0 libre | 1 ocupado | 2 fuera, camion: null }
+
+function initAndenesState(){
+  andenesState.length = 0;
+  for (let i = 0; i < CFG.andenesTotal; i++){
+    andenesState.push({ i, estado: CFG.caidos.indexOf(i) >= 0 ? 2 : 0, camion:null });
+  }
+}
+
+function fmtHora(min){
+  const t = 480 + min;
+  const h = Math.floor(t / 60) % 24, m = Math.floor(t % 60);
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+
+function crearDatosCamion(llegadaEnT){
+  const esFlota = R() < PROP_FLOTA;
+  const { prod, linea } = elegirProducto();
+  const c = {
+    id: ++seqCam,
+    flota: esFlota,
+    prod,
+    linea,
+    tLlegada: llegadaEnT,
+    tInicio: null,
+    tSalida: null,
+    anden: null,
+    slot: null,
+    paletas: 0,
+    paletasEnCamino: 0,
+    estado: "entrando", // entrando | cola | anden | saliendo | fuera | rechazado
+    usd: prod.usd * (esFlota ? 2 : 1),
+    ton: prod.ton * (esFlota ? 2 : 1),
+    malla: null,
+    mov: null,
+    cedeA: null
+  };
+  return c;
+}
+
+function intentarAsignarAndenes(){
+  let libre;
+  while (colaPatio.length && (libre = andenesState.find(a => a.estado === 0))){
+    const c = colaPatio.shift();
+    asignarCamionAAnden(c, libre);
+  }
+}
+
+function asignarCamionAAnden(c, anden){
+  anden.estado = 1;
+  anden.camion = c;
+  c.anden = anden.i;
+  c.estado = "anden";
+  c.tInicio = T;
+  if (c.slot != null){ Escena.liberarSlot(c.slot); c.slot = null; }
+  if (!fastForwarding) Escena.rutaCamionAnden(c, anden.i);
+  consumirPaletasParaCamion(c);
+}
+
+function llegadaCamionDES(isInitial){
+  const c = crearDatosCamion(T);
+  if (!fastForwarding) Escena.crearCamion(c);
+  const libre = andenesState.find(a => a.estado === 0);
+  if (libre){
+    asignarCamionAAnden(c, libre);
+  } else if (colaPatio.length < K_COLA_PATIO){
+    c.estado = "cola";
+    c.slot = Escena.tomarSlot();
+    colaPatio.push(c);
+    if (CFG.prioFlota) colaPatio.sort((a, b) => ((b.flota ? 1 : 0) - (a.flota ? 1 : 0)) || (a.tLlegada - b.tLlegada));
+    if (!fastForwarding) Escena.rutaCamionCola(c);
+  } else {
+    c.estado = "rechazado";
+    c.tSalida = T;
+    camionesRechazados++;
+    registrarCamionLog(c, true);
+    if (!fastForwarding){ Escena.rutaCamionRechazo(c); Snd.rechazo(); }
+    else Escena.borrarCamion(c);
+  }
+  if (!isInitial){
+    const lamProd = Math.max(0.25, AR[0].lam || 0.8);
+    const interCam = Math.max(2.0, CFG.paletasPorCamion / lamProd * 0.92);
+    const dt = -interCam * Math.log(1 - Math.min(0.999999, R()));
+    sc(T + dt, () => llegadaCamionDES(false));
+  }
+}
+
+function onEmpaqueDone(){
+  if (outQ.length < 6) palDone();
+}
+
+function onDespachoPalletDone(){
+  paletasListasDespacho++;
+  // Intentar despachar paletas acumuladas a camiones estacionados en andenes
+  for (const a of andenesState){
+    if (a.estado === 1 && a.camion){
+      consumirPaletasParaCamion(a.camion);
+    }
+  }
+}
+
+function consumirPaletasParaCamion(c){
+  const N = CFG.paletasPorCamion;
+  while (paletasListasDespacho > 0 && (c.paletas + c.paletasEnCamino) < N){
+    paletasListasDespacho--;
+    c.paletasEnCamino++;
+    // Encolar animación del montacargas o completar directo si estamos avanzando rápido
+    if (fastForwarding){
+      c.paletasEnCamino--;
+      c.paletas++;
+      if (c.paletas >= N){
+        despacharCamion(c);
+        break;
+      }
+    } else {
+      demandasFork.push({ cam:c, bx:Escena.DOCK_Z[c.anden] });
+    }
+  }
+  if (c.paletas >= N && c.estado === "anden") despacharCamion(c);
+}
+
+function verificarCamionesPorCambioN(){
+  for (const a of andenesState){
+    if (a.estado === 1 && a.camion && a.camion.paletas >= CFG.paletasPorCamion){
+      despacharCamion(a.camion);
+    }
+  }
+}
+
+function despacharCamion(c){
+  if (c.estado !== "anden") return;
+  const a = andenesState[c.anden];
+  if (a){ a.estado = 0; a.camion = null; }
+  c.estado = "saliendo";
+  c.tSalida = T;
+  camionesDespachados++;
+  ingresosUSD += c.usd;
+  registrarCamionLog(c, false);
+  if (!fastForwarding){
+    Escena.rutaCamionSalida(c);
+    Snd.despacho();
+  } else {
+    Escena.borrarCamion(c);
+  }
+  intentarAsignarAndenes();
+}
+
+function registrarCamionLog(c, rechazado){
+  camionesLog.push({
+    id: c.id,
+    tipo: c.flota ? "Flota propia (AC)" : "Cliente corporativo",
+    producto: c.prod.nombre,
+    paletas: c.paletas,
+    llegada: fmtHora(c.tLlegada),
+    inicio: c.tInicio != null ? fmtHora(c.tInicio) : "",
+    salida: c.tSalida != null ? fmtHora(c.tSalida) : "",
+    esperaMin: c.tInicio != null ? (c.tInicio - c.tLlegada).toFixed(1) : "",
+    permanenciaMin: c.tSalida != null ? (c.tSalida - c.tLlegada).toFixed(1) : "",
+    ton: rechazado ? 0 : c.ton,
+    usd: rechazado ? 0 : c.usd,
+    rechazado: rechazado ? "SÍ" : "NO"
+  });
+  if (camionesLog.length > 5000) camionesLog.shift();
+}
+
+function smp(){
+  S.forEach(s => {
+    s.qs.push(s.q.length);
+    if (s.qs.length > 600) s.qs.shift();
+  });
+  histColaPatio.push(colaPatio.length);
+  histPatioMin.push(Math.round(T));
+  if (histColaPatio.length > 180){ histColaPatio.shift(); histPatioMin.shift(); }
+  sc(T + 1, smp);
+}
+
+function programarFallaFork(){
+  if (!CFG.fallaFork) return;
+  sc(T + 20 + R() * 40, () => {
+    if (!CFG.fallaFork) return;
+    forkAveriado = true;
+    const f0 = Escena.forks[0];
+    if (f0) Escena.setForkAveriado(f0, true);
+    sc(T + 12 + R() * 14, () => {
+      forkAveriado = false;
+      if (f0) Escena.setForkAveriado(f0, false);
+      programarFallaFork();
+    });
+  });
+}
+
+let fastForwarding = false;
+function resetSim(){
+  T = 0; ev = [];
+  S = AR.map(() => ({ q:[], b:0, w:[], s:[], dn:0, ar:0, bi:0, qi:0, lt:0, qs:[], mq:0 }));
+  AR.forEach((a, i) => { if (a.lam != null) src(i); });
+  smp();
+
+  camionesLog = []; seqCam = 0;
+  paletasListasDespacho = 0; camionesDespachados = 0; camionesRechazados = 0; ingresosUSD = 0;
+  colaPatio = []; histColaPatio = [0]; histPatioMin = [0];
+  demandasFork.length = 0; slidePallets.length = 0;
+  outQ.forEach(p => Escena.sc.remove(p)); outQ.length = 0;
+  for (let k = 0; k < stock.length; k++){
+    if (stock[k] && typeof stock[k] === "object") Escena.sc.remove(stock[k]);
+    stock[k] = null;
+  }
+  Escena.resetCamionesYAndenes();
+  initAndenesState();
+  llegadaCamionDES(true);
+  sc(4 + R() * 4, () => llegadaCamionDES(false));
+  if (CFG.fallaFork) programarFallaFork();
+}
+
+function stepDES(dtMin){
+  const tg = T + dtMin;
+  let n = 0;
+  while (ev.length && ev[0].t <= tg && n++ < 25000){
+    const e = ev.shift();
+    T = e.t;
+    e.f();
+  }
+  T = tg;
+}
+
+function simularTurno8h(){
+  fastForwarding = true;
+  // Resolver paletas pendientes en tránsito visual hacia camiones actuales
+  demandasFork.forEach(d => {
+    if (d.cam && d.cam.estado === "anden"){
+      d.cam.paletasEnCamino = Math.max(0, d.cam.paletasEnCamino - 1);
+      d.cam.paletas++;
+    }
+  });
+  demandasFork.length = 0;
+  slidePallets.forEach(s => { Escena.sc.remove(s.mesh); });
+  slidePallets.length = 0;
+  for (const a of andenesState){
+    if (a.estado === 1 && a.camion && a.camion.paletas >= CFG.paletasPorCamion) despacharCamion(a.camion);
+  }
+  // Avanzar 480 min en pasos de 1 min para muestreo completo
+  const target = T + 480;
+  while (T < target){
+    stepDES(Math.min(1, target - T));
+  }
+  fastForwarding = false;
+
+  // Sincronizar mallas 3D de camiones activos en andenes y patio tras el salto rápido
+  Escena.camiones.forEach(c => {
+    if (c.estado !== "anden" && c.estado !== "cola") Escena.borrarCamion(c);
+  });
+  for (let i = Escena.camiones.length - 1; i >= 0; i--){
+    if (!Escena.camiones[i].malla) Escena.camiones.splice(i, 1);
+  }
+  andenesState.forEach((a, idx) => {
+    if (a.estado === 1 && a.camion){
+      if (!a.camion.malla) Escena.crearCamion(a.camion);
+      a.camion.malla.position.set(4.6, 0, DOCK_Z[idx]);
+      a.camion.malla.rotation.y = -Math.PI / 2;
+      a.camion.mov = null;
+    }
+  });
+  colaPatio.forEach(c => {
+    if (!c.malla) Escena.crearCamion(c);
+    const s = slotsPatio[c.slot] || { x:-28, z:11 };
+    c.malla.position.set(s.x, 0, s.z);
+    c.malla.rotation.y = s.z > 0 ? 0 : Math.PI;
+    c.mov = null;
+  });
+
+  actualizarColasVisuales();
+  drawPanel();
+  actualizarResumenPlanta();
+  mostrarToast("Turno de 8 horas (480 min) simulado. Reloj actual: " + fmtReloj(T) + ".");
+}
+
+/* =========================================================================
+   4. AUDIO SINTETIZADO (WEB AUDIO API)
+   ========================================================================= */
+const Snd = {
+  ctx:null, activo:true, ult:-99,
+  asegurar(){
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) this.ctx = new AC();
+  },
+  tono(freq, dur, tipo, vol){
+    if (!this.activo || !this.ctx) return;
+    const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+    o.type = tipo || "sine"; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, this.ctx.currentTime);
+    g.gain.linearRampToValueAtTime(vol || 0.04, this.ctx.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + dur);
+    o.connect(g); g.connect(this.ctx.destination);
+    o.start(); o.stop(this.ctx.currentTime + dur + 0.02);
+  },
+  despacho(){ this.tono(1120, 0.24, "sine", 0.045); setTimeout(() => this.tono(1480, 0.28, "sine", 0.035), 80); },
+  rechazo(){ this.tono(190, 0.30, "sawtooth", 0.04); }
+};
+
+/* =========================================================================
+   5. ESCENA 3D DE DÍA: PLANTA DE 9 ÁREAS + PATIO/ANDENES/BÁSCULA DEL GRUPO
+   ========================================================================= */
+const cv = $("c");
+const rd = new THREE.WebGLRenderer({ canvas:cv, antialias:true });
+rd.setPixelRatio(Math.min(devicePixelRatio, 2));
+rd.shadowMap.enabled = true;
+rd.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const G = new THREE.Scene();
+G.background = new THREE.Color(0xc5ddeb);
+G.fog = new THREE.Fog(0xc5ddeb, 180, 420);
+
+const cam = new THREE.PerspectiveCamera(48, 1, 0.2, 650);
+cam.rotation.order = "YXZ";
+
+G.add(new THREE.HemisphereLight(0xffffff, 0x687b88, 0.92));
+const sol = new THREE.DirectionalLight(0xfff5e4, 0.95);
+sol.position.set(-40, 82, 55);
+sol.castShadow = true;
+sol.shadow.mapSize.set(2048, 2048);
+sol.shadow.camera.left = -105; sol.shadow.camera.right = 105;
+sol.shadow.camera.top = 75; sol.shadow.camera.bottom = -75;
+sol.shadow.camera.far = 260; sol.shadow.bias = -0.0006;
+G.add(sol);
+const luzInt1 = new THREE.PointLight(0xfff1d6, 0.45, 75); luzInt1.position.set(36, 9, 0); G.add(luzInt1);
+const luzInt2 = new THREE.PointLight(0xfff1d6, 0.45, 75); luzInt2.position.set(66, 9, 0); G.add(luzInt2);
+
+const matCache = new Map();
+function M(c, opts){
+  const key = c + "|" + (opts ? JSON.stringify(opts) : "");
+  if (!opts && matCache.has(key)) return matCache.get(key);
+  const m = new THREE.MeshLambertMaterial(Object.assign({ color:c }, opts || {}));
+  if (!opts) matCache.set(key, m);
+  return m;
+}
+function B(w, h, d, c, x, y, z, g, cast){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), M(c));
+  m.position.set(x, y, z);
+  if (cast !== false) m.castShadow = true;
+  m.receiveShadow = true;
+  (g || G).add(m);
+  return m;
+}
+function Y(r, h, c, x, y, z, g){
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 14), M(c));
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  (g || G).add(m);
+  return m;
+}
+const tint = k => new THREE.Color(k).lerp(new THREE.Color(0xffffff), 0.62).getHex();
+
+function sgn(txt, x, y, z, w, ry, flat, bgHex, fgHex){
+  const c = document.createElement("canvas"); c.width = 512; c.height = 128;
+  const g = c.getContext("2d");
+  g.fillStyle = bgHex || "#f2c230";
+  g.fillRect(0, 0, 512, 128);
+  g.strokeStyle = "#10202b"; g.lineWidth = 6;
+  g.strokeRect(3, 3, 506, 122);
+  g.fillStyle = fgHex || "#10202b";
+  let f = 50; g.font = "bold 50px sans-serif";
+  while (g.measureText(txt).width > 470 && f > 14){ f -= 2; g.font = "bold " + f + "px sans-serif"; }
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(txt, 256, 66);
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, w / 4),
+    new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(c) })
+  );
+  m.position.set(x, y, z);
+  if (flat){
+    m.rotation.set(-Math.PI / 2, 0, ry || 0);
+  } else {
+    m.rotation.y = ry || 0;
+  }
+  G.add(m);
+  return m;
+}
+
+// ---------- Terreno, vialidad exterior, caseta, parqueo 8 lugares, báscula y andenes ----------
+B(420, 0.3, 340, 0x8aa37a, 10, -0.25, 0, G, false); // césped exterior
+B(106, 0.08, 86, 0x454e56, -38, -0.02, -4, G, false); // patio asfaltado de camiones
+
+// Carriles exteriores amarillos (entrada, transversal y salida por báscula)
+const lineaPiso = (w, d, x, z, c) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ color:c || 0xd8b93a }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x, 0.03, z);
+  G.add(m);
+};
+lineaPiso(80, 0.35, -40, 4.4); lineaPiso(80, 0.35, -40, -4.4);
+lineaPiso(80, 0.35, -40, -25.6); lineaPiso(80, 0.35, -40, -34.4);
+sgn("▲ LLEGADA", -65, 0.05, 0, 7, Math.PI / 2, true);
+sgn("▼ SALIDA", -65, 0.05, -30, 7, Math.PI / 2, true);
+sgn("ZONA DE CARGA", 4, 0.05, -18, 9, Math.PI / 2, true);
+
+// Caseta y barrera en x = -48
+B(6, 5, 6, 0x9aa4b0, -48, 2.5, 9);
+B(7, 0.4, 7, 0x6e7681, -48, 5.1, 9);
+B(5.4, 2.0, 0.25, 0x9fd3e6, -48, 3.1, 5.9);
+B(0.7, 3.4, 0.7, 0xc0392b, -48, 1.7, 3.6);
+const barrera = new THREE.Group();
+const brazoBar = B(0.32, 0.32, 9.2, 0xe8e8e8, 0, 0, -4.5, barrera);
+for (let k = 1; k < 5; k++) B(0.36, 0.36, 1.0, 0xc0392b, 0, 0, -0.9 - k * 1.9, barrera);
+barrera.position.set(-48, 3.1, 3.6);
+G.add(barrera);
+
+// Parqueo de 8 lugares numerados
+const slotsPatio = [];
+(function buildParqueo(){
+  let n = 0;
+  for (const z of [11, -11]){
+    for (const x of [-38, -31, -24, -17]){
+      lineaPiso(0.22, 8.2, x - 2.1, z, 0xc8d0d8);
+      lineaPiso(0.22, 8.2, x + 2.1, z, 0xc8d0d8);
+      lineaPiso(4.4, 0.22, x, z - 4.1, 0xc8d0d8);
+      slotsPatio.push({ x, z, libre:true, n:++n });
+      const cvN = document.createElement("canvas"); cvN.width = cvN.height = 128;
+      const gx = cvN.getContext("2d");
+      gx.fillStyle = "#c8d0d8"; gx.font = "bold 90px sans-serif"; gx.textAlign = "center"; gx.textBaseline = "middle";
+      gx.fillText(String(n), 64, 68);
+      const pm = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.1), new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(cvN), transparent:true }));
+      pm.rotation.x = -Math.PI / 2; pm.position.set(x, 0.04, z + 3.0); G.add(pm);
+    }
+  }
+})();
+
+// Báscula de salida en (-14, -30)
+B(9, 0.4, 7.6, 0x6e7681, -14, 0.2, -30);
+B(0.55, 4.4, 0.55, 0x9aa4b0, -14, 2.2, -25.2);
+sgn("BÁSCULA · SALIDA", -14, 5.1, -25.2, 11, 0, false, "#161b22", "#3fb950");
+
+// 3 Andenes exteriores en x = 8, DOCK_Z = [12, 0, -12]
+const DOCK_Z = [12, 0, -12];
+const anden3Piezas = [];
+const cintasAnden = [];
+DOCK_Z.forEach((z, idx) => {
+  const arrP = [];
+  arrP.push(B(8.4, 1.4, 9.6, 0x8a929c, 10.2, 0.7, z));
+  arrP.push(B(0.6, 0.9, 1.3, 0x22262b, 6.1, 1.25, z + 3.2));
+  arrP.push(B(0.6, 0.9, 1.3, 0x22262b, 6.1, 1.25, z - 3.2));
+  arrP.push(sgn("ANDÉN " + (idx + 1), 10.2, 2.6, z + 5.2, 6.6, 0, false, "#161b22", "#e6edf3"));
+  if (idx === 2) anden3Piezas.push(...arrP);
+
+  const cinta = new THREE.Group();
+  for (let k = 0; k < 4; k++) B(0.3, 0.5, 9.0, k % 2 ? 0xe3b341 : 0x22262b, 5.9, 1.8 + k * 0.6, z, cinta);
+  cinta.visible = false;
+  G.add(cinta);
+  cintasAnden.push(cinta);
+});
+
+// ---------- Nave principal de 9 áreas (x in [14, 80], z in [-21, 21]) ----------
+B(66.4, 0.24, 42.4, 0xd8dfe4, 47, 0.04, 0, G, false); // losa interior
+
+// Paredes exteriores (oeste x=14 con 3 portones de andén, este x=80, norte z=-21, sur z=21)
+B(66.4, 6.4, 0.45, 0xe6ebee, 47, 3.2, -21);
+B(66.4, 6.4, 0.45, 0xe6ebee, 47, 3.2, 21);
+B(0.45, 6.4, 42.4, 0xe6ebee, 80, 3.2, 0);
+// Pared oeste dividida para dejar claros los 3 portones de andén (z=12, 0, -12)
+B(0.45, 6.4, 4.5, 0xe6ebee, 14, 3.2, 18.75);
+B(0.45, 6.4, 3.0, 0xe6ebee, 14, 3.2, 6.0);
+B(0.45, 6.4, 3.0, 0xe6ebee, 14, 3.2, -6.0);
+B(0.45, 6.4, 4.5, 0xe6ebee, 14, 3.2, -18.75);
+DOCK_Z.forEach(z => {
+  B(0.45, 1.8, 9.0, 0xe6ebee, 14, 5.5, z); // dintel sobre cada andén
+  B(0.2, 4.6, 8.6, 0x2b333b, 14.05, 2.3, z); // cortina enrollable oscura
+});
+
+// Ventanas en paredes norte, sur y este, más puertas ENTRADA y ENTRADA PERSONAL
+for (let i = 0; i < 8; i++){
+  const x = 19 + i * 7.8;
+  [-1, 1].forEach(s => {
+    [21.25, 20.75].forEach(oz => {
+      B(3.0, 1.8, 0.1, 0x9fd3e6, x, 3.7, s * oz);
+      B(3.2, 0.14, 0.18, 0x4b5560, x, 2.75, s * oz);
+    });
+  });
+}
+for (let j = 0; j < 4; j++){
+  const z = -15 + j * 10;
+  if (Math.abs(z) < 3) continue;
+  [80.25, 79.75].forEach(ox => {
+    B(0.1, 1.8, 3.0, 0x9fd3e6, ox, 3.7, z);
+    B(0.18, 0.14, 3.2, 0x4b5560, ox, 2.75, z);
+  });
+}
+// Puerta principal de personal (sur, junto a despacho/almacén) y puerta este
+B(3.2, 3.4, 0.14, 0x1d6b4f, 21, 1.7, 21.25);
+sgn("ENTRADA PERSONAL", 21, 4.4, 21.35, 5, 0);
+B(0.14, 3.4, 3.2, 0x1d6b4f, 80.25, 1.7, 0);
+sgn("ENTRADA", 80.35, 4.4, 0, 4, Math.PI / 2);
+
+// Techo a dos aguas con mojinetes triangulares y cumbrera
+const roof = new THREE.Group();
+G.add(roof);
+const angTecho = Math.atan(4.2 / 21.6), largoFaldon = Math.hypot(21.6, 4.2) + 0.4;
+[-1, 1].forEach(s => {
+  const m = B(67.2, 0.35, largoFaldon, 0xb5483a, 47, 8.5, s * 10.8, roof);
+  m.rotation.x = s * angTecho;
+});
+B(67.2, 0.32, 0.7, 0x8c3a2e, 47, 10.65, 0, roof);
+const shMoj = new THREE.Shape();
+shMoj.moveTo(-21, 6.4); shMoj.lineTo(21, 6.4); shMoj.lineTo(0, 10.55);
+[14, 80].forEach(x => {
+  const t = new THREE.Mesh(
+    new THREE.ShapeGeometry(shMoj),
+    new THREE.MeshLambertMaterial({ color:0xe6ebee, side:THREE.DoubleSide })
+  );
+  t.rotation.y = Math.PI / 2;
+  t.position.x = x;
+  roof.add(t);
+});
+
+// Divisores interiores bajos entre áreas (dejando paso libre para la banda z=8..11)
+[28, 41, 54, 67].forEach(x => {
+  B(0.18, 1.2, 18, 0xb8c4cc, x, 0.65, -12);
+  if (x === 54 || x === 67){
+    B(0.18, 1.2, 5, 0xb8c4cc, x, 0.65, 5.5);
+    B(0.18, 1.2, 10, 0xb8c4cc, x, 0.65, 16.0);
+  } else {
+    B(0.18, 1.2, 18, 0xb8c4cc, x, 0.65, 12);
+  }
+});
+
+// Pasillo peatonal verde y vía central de montacargas (x: 26..80, z: -3..3)
+B(54, 0.04, 5.8, 0x7b8690, 53, 0.14, 0, G, false);
+[-1, 1].forEach(s => {
+  B(54, 0.04, 1.15, 0x2e9f5a, 53, 0.15, s * 2.15, G, false);
+  B(54, 0.04, 0.12, 0xf2c230, 53, 0.16, s * 2.75, G, false);
+  B(54, 0.04, 0.12, 0xf2c230, 53, 0.16, s * 1.55, G, false);
+});
+for (let x = 28; x <= 78; x += 3) B(1.5, 0.03, 0.14, 0xf4f6f7, x, 0.16, 0, G, false);
+sgn("PASILLO PEATONAL", 48, 0.18, 2.15, 6.5, 0, true, "#2e9f5a", "#10202b");
+sgn("PASILLO PEATONAL", 62, 0.18, -2.15, 6.5, 0, true, "#2e9f5a", "#10202b");
+sgn("VÍA DE MONTACARGAS", 54, 0.18, 0, 7.5, 0, true);
+
+// ---------- Maquinaria, tableros de control, colas y operarios Lego por área ----------
+const spin = [], Q = [], WS = [], tablerosPiloto = [], floorHitMeshes = [];
+
+function ptsOf(i, j){
+  const [x0, z0, x1, z1] = AR[i].r, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  switch (i){
+    case 0: return [[x0 + 2 + j * 2.2, z0 + 9.2], [x0 + 3 + j * 2.0, z0 + 13.5]];
+    case 1: return [[x0 + 2.5 + j * 2.0, z0 + 10.5], [x0 + 3.5 + j * 1.8, z0 + 14.0]];
+    case 2: return [[x0 + 2.5 + j * 2.2, z0 + 4.5], [x0 + 4.0 + j * 2.0, z0 + 6.5]];
+    case 3: return [[x0 + 2.0 + j * 2.5, z0 + 4.5], [x0 + 3.5 + j * 2.2, z0 + 6.5]];
+    case 4: return [[x0 + 2.5 + j * 2.0, z0 + 4.5], [x0 + 2.5 + (j % 3) * 2.4, z0 + 12.0]];
+    case 5: return [[x0 + 2.5, z0 + 4.5 + (j % 3) * 4.0], [x1 - 2.5, z0 + 4.5 + (j % 3) * 4.0]];
+    case 6: return [[17.5, DOCK_Z[j % 3]], [21.5, DOCK_Z[j % 3] + 2.2]];
+    case 7: return [[cx - 2 + (j % 3) * 2, z0 + 8], [cx + 2, z0 + 12.5]];
+    default: return [[x0 + 3 + (j % 2) * 5, z0 + 5.5 + Math.floor(j / 2) * 4]];
+  }
+}
+
+function wkr(torsoColor, hatColor){
+  const g = new THREE.Group();
+  const L = 0x2a3f6b, Hd = 0xf2c230;
+  B(0.7, 0.7, 0.4, torsoColor, 0, 1.05, 0, g); // torso [0]
+  B(0.2, 0.55, 0.2, torsoColor, -0.46, 1.0, 0, g); // brazo L [1]
+  B(0.2, 0.55, 0.2, torsoColor, 0.46, 1.0, 0, g);  // brazo R [2]
+  B(0.22, 0.2, 0.22, Hd, -0.46, 0.62, 0, g); // mano L [3]
+  B(0.22, 0.2, 0.22, Hd, 0.46, 0.62, 0, g);  // mano R [4]
+  B(0.3, 0.55, 0.32, L, -0.17, 0.28, 0, g);
+  B(0.3, 0.55, 0.32, L, 0.17, 0.28, 0, g);
+  Y(0.24, 0.34, Hd, 0, 1.58, 0, g);
+  Y(0.28, 0.14, hatColor || 0xffffff, 0, 1.76, 0, g);
+  Y(0.09, 0.08, hatColor || 0xffffff, 0, 1.87, 0, g);
+  B(0.05, 0.06, 0.02, 0x111111, -0.08, 1.60, 0.235, g);
+  B(0.05, 0.06, 0.02, 0x111111, 0.08, 1.60, 0.235, g);
+  return g;
+}
+
+function rw(i){
+  if (WS[i]) G.remove(WS[i].g);
+  const a = AR[i], g = new THREE.Group(), n = Math.min(8, a.c);
+  WS[i] = { g, torso:[], brazoL:[], brazoR:[], p:[] };
+  for (let j = 0; j < n; j++){
+    const p = wkr(0x8aa0ae, i === 7 ? 0xffffff : 0xf2c230);
+    const q = ptsOf(i, j);
+    p.position.set(q[0][0], 0, q[0][1]);
+    g.add(p);
+    WS[i].torso.push(p.children[0]);
+    WS[i].brazoL.push(p.children[1]);
+    WS[i].brazoR.push(p.children[2]);
+    WS[i].p.push(p);
+  }
+  G.add(g);
+}
+
+AR.forEach((a, i) => {
+  const [x0, z0, x1, z1] = a.r, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, w = x1 - x0, d = z1 - z0;
+  const pisoArea = B(w - 0.5, 0.06, d - 0.5, tint(a.k), cx, 0.13, cz, G, false);
+  pisoArea.userData.areaIdx = i;
+  floorHitMeshes.push(pisoArea);
+
+  // Letrero por área
+  const zSgn = i === 6 ? -20.5 : (z0 < 0 ? z1 - 0.5 : z0 + 0.5);
+  const rySgn = i === 6 ? 0 : (z0 < 0 ? 0 : Math.PI);
+  sgn(a.n, cx, 5.1, zSgn, Math.min(w - 1, 10.5), rySgn);
+
+  // Tablero de control en cada una de las 9 áreas
+  const tx = x1 - 1.3, tz = z0 + 1.4;
+  B(1.1, 2.0, 0.75, 0x3b4650, tx, 1.0, tz);
+  B(0.85, 0.55, 0.05, 0x162430, tx, 1.45, tz + 0.39);
+  const piloto = Y(0.11, 0.24, 0x2ecc71, tx, 2.12, tz);
+  tablerosPiloto.push(piloto);
+
+  // Maquinaria específica de pinturas por área
+  switch (i){
+    case 0: { // Recepción y dispersión
+      for (let j = 0; j < 3; j++){
+        Y(1.5, 4.6, 0x9ec9d8, x0 + 2.8 + j * 3.5, 2.4, z0 + 4.0);
+        const domo = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), M(0xb7dbe8));
+        domo.position.set(x0 + 2.8 + j * 3.5, 4.7, z0 + 4.0); G.add(domo);
+      }
+      const tubo = Y(0.18, w - 3, 0x5a7a8c, cx, 3.6, z0 + 7.2); tubo.rotation.z = Math.PI / 2;
+      for (let j = 0; j < 3; j++) Y(0.24, 0.08, 0xdd3322, x0 + 3 + j * 3.5, 3.9, z0 + 7.2);
+      // 2 dispersores Cowles rotatorios
+      for (let j = 0; j < 2; j++){
+        Y(1.3, 1.8, 0x6f8794, x0 + 3.5 + j * 5.0, 1.0, z0 + 11.2);
+        spin.push({ m:B(1.6, 0.16, 0.3, 0xe8741c, x0 + 3.5 + j * 5.0, 2.1, z0 + 11.2), i });
+      }
+      break;
+    }
+    case 1: { // Molienda y tinteo
+      for (let j = 0; j < 2; j++){
+        B(3.2, 2.2, 2.6, 0x5a6b8c, x0 + 3.5 + j * 5.2, 1.2, z0 + 4.6); // molinos de perlas
+        Y(0.85, 2.8, 0xc9d5f5, x0 + 3.5 + j * 5.2, 3.4, z0 + 4.6);
+        // tanques de completado y tinteo con aspa
+        Y(1.4, 2.0, PRODUCTOS[j].color, x0 + 3.5 + j * 5.2, 1.1, z0 + 10.6);
+        spin.push({ m:B(1.8, 0.16, 0.25, 0xf2f2f2, x0 + 3.5 + j * 5.2, 2.25, z0 + 10.6), i });
+      }
+      // tubería hacia Envasado cruzando el pasillo central
+      Y(0.2, 10.0, 0x2fb5d6, x0 + 6.5, 4.4, 0).rotation.x = Math.PI / 2;
+      break;
+    }
+    case 2: { // Envasado y tapado (carrusel rotatorio + latas)
+      const g = new THREE.Group(); g.position.set(cx, 0, z1 - 5.2); G.add(g);
+      const t = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.2, 8, 24), M(0xc9d1d6));
+      t.rotation.x = Math.PI / 2; t.position.y = 2.6; g.add(t);
+      for (let j = 0; j < 10; j++){
+        const ang = j * Math.PI * 2 / 10;
+        Y(0.24, 0.65, PRODUCTOS[j % PRODUCTOS.length].color, Math.cos(ang) * 2.6, 2.1, Math.sin(ang) * 2.6, g);
+      }
+      spin.push({ m:g, i });
+      B(3.2, 3.0, 3.0, 0x3b4650, cx + 3.8, 1.6, z1 - 5.2);
+      break;
+    }
+    case 3: { // Etiquetado
+      B(3.2, 2.6, 2.8, 0xd4a72c, cx, 1.4, z1 - 5.2);
+      spin.push({ m:Y(0.75, 0.55, 0xffffff, cx, 3.05, z1 - 5.2), i });
+      break;
+    }
+    case 4: { // Empaque y paletizado
+      B(3.2, 2.6, 3.4, 0x6f8794, cx, 1.4, z1 - 5.2);
+      B(2.6, 0.9, 0.08, 0x9fd3e6, cx, 2.2, z1 - 3.45);
+      B(1.4, 0.5, 5.2, 0x3a434b, cx - 3.6, 0.85, z0 + 6.2); // salida de cajas
+      break;
+    }
+    case 5: { // Almacén de producto terminado (racks con paletas de colores AC)
+      for (let f = 0; f < 3; f++){
+        const rz = z0 + 3.4 + f * 4.6;
+        for (let m = 0; m <= 3; m++) B(0.16, 4.6, 0.16, 0x2b5da8, x0 + 2.0 + m * 2.8, 2.3, rz);
+        for (let lvl = 0; lvl < 2; lvl++) B(8.8, 0.14, 1.4, 0x545c66, cx, 1.1 + lvl * 1.8, rz);
+      }
+      break;
+    }
+    case 6: { // Despacho y andén
+      DOCK_Z.forEach(z => {
+        B(2.4, 0.45, 2.4, 0x6b7f8a, 16.5, 0.35, z);
+        Y(0.16, 1.0, 0xf2c230, 15.2, 0.5, z + 2.1);
+        Y(0.16, 1.0, 0xf2c230, 15.2, 0.5, z - 2.1);
+      });
+      break;
+    }
+    case 7: { // Laboratorio de calidad
+      for (let j = 0; j < 2; j++){
+        B(5.2, 1.0, 1.6, 0xdfe6ea, cx, 0.6, z0 + 5 + j * 4.8);
+        for (let m = 0; m < 3; m++) Y(0.28, 0.65, PRODUCTOS[(j * 3 + m) % PRODUCTOS.length].color, cx - 1.6 + m * 1.6, 1.38, z0 + 5 + j * 4.8);
+      }
+      B(2.2, 1.6, 1.0, 0xdfe6ea, cx, 0.9, z0 + 2.2);
+      B(1.6, 0.8, 0.06, 0x9fd3e6, cx, 1.5, z0 + 2.75);
+      break;
+    }
+    case 8: { // Oficinas (pedidos)
+      B(w - 1, 2.2, 0.12, 0x9fd3e6, cx, 1.2, z1 - 0.2); // mampara vidriada hacia el pasillo
+      for (let c = 0; c < 2; c++){
+        for (let r = 0; r < 2; r++){
+          const ox = x0 + 3.2 + c * 5.0, oz = z0 + 4.5 + r * 5.2;
+          B(2.2, 0.1, 1.1, 0x8b6b4a, ox, 1.0, oz);
+          B(0.85, 0.6, 0.1, 0x20262c, ox, 1.4, oz - 0.3);
+          B(0.65, 0.6, 0.65, 0x3b4650, ox, 0.4, oz + 0.9);
+        }
+      }
+      break;
+    }
+  }
+
+  // Cola visible de lotes (hasta 14 envases/paletas por área)
+  Q[i] = Array.from({ length:14 }, (_, j) => {
+    const qx = i === 6 ? 19.5 + (j % 4) * 1.4 : x0 + 2.0 + (j % 7) * 1.25;
+    const qz = i === 6 ? -8.5 + Math.floor(j / 4) * 2.2 : (z0 < 0 ? z1 - 2.0 - (j > 6 ? 1.2 : 0) : z0 + 2.2 + (j > 6 ? 1.2 : 0));
+    return B(0.85, 0.85, 0.85, a.k, qx, 0.56, qz);
+  });
+  rw(i);
+
+  // Etiqueta HTML clicable del área (alternando z ligeramente para evitar solapes en vista cenital)
+  const b = el("button", { cls:"lab", txt:a.n });
+  b.onclick = () => openPanel(i);
+  $("labs").appendChild(b);
+  a.el = b;
+  const offZ = i === 6 ? 0 : (z0 < 0 ? (i % 2 ? -1.4 : 1.4) : (i % 2 ? 1.4 : -1.4));
+  a.c3 = new THREE.Vector3(cx, 2.8, cz + offZ);
+});
+
+// ---------- Banda continua de envases de pintura (Envasado -> Etiquetado -> Empaque) ----------
+// Corre de derecha a izquierda en z = 9.5 entre x = 77 y x = 44
+const BZ = 9.5, BX0 = 44, BX1 = 77;
+B(BX1 - BX0, 0.45, 2.4, 0x3a434b, (BX0 + BX1) / 2, 0.95, BZ);
+for (let x = BX0 + 2; x < BX1; x += 4.5) B(0.2, 0.7, 2.1, 0x6b7f8a, x, 0.35, BZ);
+const CANS = [];
+const geoLata = new THREE.CylinderGeometry(0.24, 0.24, 0.56, 10);
+const geoEtiq = new THREE.CylinderGeometry(0.255, 0.255, 0.24, 10);
+const matEtiq = M(0xffffff);
+for (let c = 0; c < 30; c++){
+  for (let l = 0; l < 3; l++){
+    const prod = PRODUCTOS[(c + l) % PRODUCTOS.length];
+    const m = new THREE.Mesh(geoLata, M(prod.color));
+    const lb = new THREE.Mesh(geoEtiq, matEtiq);
+    m.add(lb); lb.visible = false; G.add(m);
+    CANS.push({ m, lb, x: BX1 - c * 1.05 - (l % 2) * 0.4, z: BZ - 0.6 + l * 0.6 });
+  }
+}
+
+// Cajas en Empaque -> paletizador -> paletas terminadas outQ -> racks de Almacén -> andenes
+const CT = [0, 1, 2, 3].map(k => B(0.85, 0.55, 0.85, 0xd9b97a, 43.8, 1.38, 13.0 - k * 1.1));
+B(1.15, 0.14, 1.15, 0x9a7b4f, 43.8, 0.20, 6.2);
+const stg = B(1.0, 1.0, 1.0, 0xd9b97a, 43.8, 0.65, 6.2);
+stg.visible = false;
+let cntCajas = 0;
+
+function crearPaletaMesh(color){
+  const g = new THREE.Group();
+  B(1.1, 0.14, 1.1, 0x9a7b4f, 0, 0.07, 0, g);
+  B(0.96, 0.96, 0.96, color || 0xd9b97a, 0, 0.62, 0, g);
+  const f = new THREE.Mesh(new THREE.BoxGeometry(1.04, 1.0, 1.04),
+    new THREE.MeshLambertMaterial({ color:0x9fd3e6, transparent:true, opacity:0.32 }));
+  f.position.set(0, 0.62, 0);
+  g.add(f);
+  return g;
+}
+
+const stock = Array(12).fill(null); // 12 posiciones de rack en Almacén (x: 30..39, z: 7..17)
+const slotStockXZ = s => [30.5 + (s % 4) * 2.7, 7.6 + Math.floor(s / 4) * 4.6];
+const outQ = [];
+const demandasFork = [], slidePallets = [];
+
+function palDone(){
+  cntCajas = 0;
+  const { prod } = elegirProducto();
+  const g = crearPaletaMesh(prod.color);
+  g.position.set(42.2, 0, 4.4 + Math.min(outQ.length, 4) * 1.5);
+  G.add(g);
+  outQ.push(g);
+}
+
+// ---------- Montacargas con conductor estilo Lego ----------
+let forkAveriado = false;
+const Escena = {
+  sc: G,
+  DOCK_Z,
+  forks: [],
+  camiones: [],
+  tomarSlot(){ const s = slotsPatio.find(x => x.libre); if (s){ s.libre = false; return s.n - 1; } return null; },
+  liberarSlot(i){ if (i != null && slotsPatio[i]) slotsPatio[i].libre = true; },
+  setForkAveriado(f, on){
+    if (!f) return;
+    f.averiado = on;
+    f.chasis.material.color.setHex(on ? 0x6e7681 : 0xf2a900);
+    f.baliza.material.color.setHex(on ? 0xf85149 : 0xff7a00);
+  },
+  resetCamionesYAndenes(){
+    this.camiones.forEach(c => { if (c.malla) G.remove(c.malla); });
+    this.camiones.length = 0;
+    slotsPatio.forEach(s => s.libre = true);
+    anden3Piezas.forEach(m => m.visible = CFG.andenesTotal >= 3);
+    cintasAnden.forEach((c, idx) => c.visible = CFG.caidos.indexOf(idx) >= 0);
+    this.forks.forEach((f, idx) => {
+      f.g.visible = idx < CFG.forksTotal;
+      f.q = [];
+      if (f.pl){ f.g.remove(f.pl); G.remove(f.pl); f.pl = null; }
+      f.g.position.set(24 + idx * 4, 0, 0);
+      f.g.rotation.y = Math.PI / 2;
+      this.setForkAveriado(f, false);
+    });
+    forkAveriado = false;
+  },
+  crearCamion(c){
+    const g = new THREE.Group();
+    const colCab = c.flota ? 0x2f6feb : 0x2ea043;
+    B(2.8, 3.0, 6.2, c.prod.color, 0, 2.35, -2.0, g);
+    B(2.82, 0.24, 6.2, 0xe8741c, 0, 1.0, -2.0, g);
+    B(2.6, 2.4, 2.4, colCab, 0, 1.85, 2.4, g);
+    B(2.6, 0.95, 0.85, colCab, 0, 1.2, 3.9, g);
+    B(2.3, 0.95, 0.08, 0x9fd3e6, 0, 2.35, 3.62, g); // parabrisas
+    [-1.31, 1.31].forEach(sx => {
+      B(0.08, 0.9, 1.4, 0x9fd3e6, sx, 2.35, 2.4, g);
+      B(0.1, 0.38, 0.22, 0x222222, sx * 1.1, 2.4, 3.3, g); // espejos
+      B(0.4, 0.22, 0.05, 0xfff2a8, sx * 0.7, 1.2, 4.35, g); // faros
+    });
+    B(2.7, 0.3, 0.3, 0x333b42, 0, 0.65, 4.4, g);
+    B(2.6, 0.4, 8.6, 0x333b42, 0, 0.65, -0.4, g);
+    [-3.6, -1.2, 2.8].forEach(rz => [-1.3, 1.3].forEach(rx => {
+      const w = Y(0.58, 0.42, 0x15181c, rx, 0.58, rz, g); w.rotation.z = Math.PI / 2;
+      const r = Y(0.28, 0.44, 0xc9d1d6, rx, 0.58, rz, g); r.rotation.z = Math.PI / 2;
+    }));
+    // Rótulo lateral AC / CLIENTE
+    const cvL = document.createElement("canvas"); cvL.width = 256; cvL.height = 128;
+    const cx = cvL.getContext("2d");
+    cx.fillStyle = c.flota ? "#2f6feb" : "#2ea043"; cx.fillRect(0, 0, 256, 128);
+    cx.fillStyle = "#ffffff"; cx.font = "bold " + (c.flota ? 74 : 44) + "px sans-serif";
+    cx.textAlign = "center"; cx.textBaseline = "middle"; cx.fillText(c.flota ? "AC" : "CLIENTE", 128, 66);
+    const tex = new THREE.CanvasTexture(cvL);
+    for (const dx of [1.43, -1.43]){
+      const pl = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 1.8), new THREE.MeshBasicMaterial({ map:tex }));
+      pl.position.set(dx, 2.35, -2.0); pl.rotation.y = dx > 0 ? Math.PI / 2 : -Math.PI / 2;
+      g.add(pl);
+    }
+    let x0 = -76;
+    while (this.camiones.some(o => o !== c && o.malla && Math.abs(o.malla.position.z) < 4 && Math.abs(o.malla.position.x - x0) < 12)) x0 -= 12;
+    g.position.set(x0, 0, 0);
+    g.rotation.y = Math.PI / 2;
+    G.add(g);
+    c.malla = g;
+    this.camiones.push(c);
+    this.moverCamion(c, [[x0, 0], [-52, 0]], 1.2);
+  },
+  borrarCamion(c){
+    if (!c.malla) return;
+    G.remove(c.malla);
+    c.malla = null;
+  },
+  moverCamion(c, pts, minutos, reversa){
+    const v = pts.map(p => new THREE.Vector2(p[0], p[1]));
+    let largo = 0;
+    for (let i = 1; i < v.length; i++) largo += v[i].distanceTo(v[i - 1]);
+    c.mov = { pts:v, dur:minutos, prog:0, largo:Math.max(largo, 0.01), reversa:reversa || [], quieto:0 };
+  },
+  posCam(c, def){ return c.malla ? [c.malla.position.x, c.malla.position.z] : def; },
+  rutaCamionCola(c){
+    const s = slotsPatio[c.slot] || { x:-28, z:0 };
+    const p = this.posCam(c, [-52, 0]);
+    this.moverCamion(c, [p, [-44, 0], [s.x, 0], [s.x, s.z]], 1.3);
+  },
+  rutaCamionAnden(c, idx){
+    const z = DOCK_Z[idx];
+    const p = this.posCam(c, [-44, 0]);
+    const desdePatio = Math.abs(p[1]) > 3;
+    const pts = desdePatio ? [p, [p[0], 0], [-10, 0]] : [p, [-10, 0]];
+    const pasada = z < 0 ? z - 5 : z + 5;
+    pts.push([-8, pasada], [-4, z], [4.6, z]);
+    const n = pts.length;
+    this.moverCamion(c, pts, 1.8, (desdePatio ? [0] : []).concat([n - 3, n - 2]));
+  },
+  rutaCamionSalida(c){
+    const z = DOCK_Z[c.anden];
+    const p = this.posCam(c, [4.6, z]);
+    this.moverCamion(c, [p, [-5, z], [-5, -30], [-14, -30], [-78, -30]], 2.6);
+  },
+  rutaCamionRechazo(c){
+    const p = this.posCam(c, [-52, 0]);
+    this.moverCamion(c, [p, [-56, -15], [-78, -30]], 2.2);
+  }
+};
+
+function crearMontacargas(idx){
+  const g = new THREE.Group();
+  const wf = (x, z, r) => { Y(r, 0.25, 0x1c1f23, x, r, z, g).rotation.z = Math.PI / 2; };
+  const ch = B(1.5, 0.8, 2.2, 0xf2a900, 0, 0.8, -0.3, g);
+  B(1.5, 0.9, 0.8, 0x3a3f45, 0, 1.0, -1.3, g);
+  B(0.9, 0.15, 0.8, 0x222222, 0, 1.25, -0.1, g);
+  B(1.3, 0.5, 0.1, 0x333b42, 0, 0.6, 1.15, g);
+  [-0.35, 0.35].forEach(x => {
+    B(0.1, 2.4, 0.1, 0x333b42, x, 1.4, 1.15, g);
+    B(0.15, 0.08, 1.5, 0x8a949b, x * 1.2, 0.12, 1.9, g);
+  });
+  [-0.7, 0.7].forEach(x => [0.5, -0.8].forEach(z => B(0.06, 1.3, 0.06, 0x333b42, x, 1.9, z, g)));
+  B(1.6, 0.06, 1.6, 0x333b42, 0, 2.55, -0.15, g);
+  const baliza = Y(0.11, 0.16, 0xff7a00, 0, 2.66, -0.15, g);
+  wf(-0.8, 0.5, 0.4); wf(0.8, 0.5, 0.4); wf(-0.75, -1, 0.3); wf(0.75, -1, 0.3);
+  // Conductor Lego con casco amarillo
+  const dv = wkr(0x2563eb, 0xf2c230);
+  dv.position.set(0, 0.8, -0.05); dv.scale.set(0.8, 0.8, 0.8);
+  g.add(dv);
+  g.position.set(24 + idx * 4, 0, 0);
+  G.add(g);
+  Escena.forks.push({ g, chasis:ch, baliza, q:[], pl:null, averiado:false });
+}
+crearMontacargas(0);
+crearMontacargas(1);
+
+// Personal circulando por los pasillos peatonales verdes
+const WN = [0, 1, 2, 3].map(j => {
+  const g = wkr(0xf28c28, 0xffffff);
+  g.position.set(30 + j * 12, 0, j % 2 ? 2.15 : -2.15);
+  G.add(g);
+  return { g, tx:30 + j * 12, tz:j % 2 ? 2.15 : -2.15, v:1.6 + R() * 0.6 };
+});
+
+/* =========================================================================
+   6. ANIMACIÓN DE PLANTA, MONTACARGAS, CAMIONES, OPERARIOS Y CÁMARA
+   ========================================================================= */
+function animarFlujo(dt){
+  const v = S[2].b > 0 || S[3].b > 0 ? 2.4 : 0;
+  CANS.forEach(c => {
+    c.x -= v * dt;
+    if (c.x < BX0) c.x += (BX1 - BX0);
+    c.m.position.set(c.x, 1.48, c.z);
+    c.lb.visible = c.x < 61; // adquiere etiqueta en área de Etiquetado
+  });
+  CT.forEach(c => {
+    if (S[4].b > 0){
+      c.position.z -= 1.4 * dt;
+      if (c.position.z < 7.8){ c.position.z += 4.4; cntCajas = Math.min(8, cntCajas + 1); }
+    }
+  });
+  stg.visible = cntCajas > 0;
+  stg.scale.y = Math.max(0.01, cntCajas * 0.16);
+  stg.position.y = 0.25 + cntCajas * 0.08;
+
+  slidePallets.forEach(s => {
+    s.mesh.position.x -= 2.2 * dt;
+    if (s.mesh.position.x < 10.5){
+      G.remove(s.mesh);
+      s.done = true;
+      if (s.cam){
+        s.cam.paletasEnCamino = Math.max(0, s.cam.paletasEnCamino - 1);
+        s.cam.paletas++;
+        if (s.cam.paletas >= CFG.paletasPorCamion) despacharCamion(s.cam);
+      }
+    }
+  });
+  for (let i = slidePallets.length - 1; i >= 0; i--){
+    if (slidePallets[i].done) slidePallets.splice(i, 1);
+  }
+}
+
+function planFork(f){
+  if (f.q.length || f.averiado) return;
+  const leg = (x, z, rev, fn) => f.q.push({ x, z, rev, fn });
+  const px = f.g.position.x, pz = f.g.position.z;
+  const pick = p => { f.g.add(p); p.position.set(0, 0.15, 2.1); p.rotation.set(0, 0, 0); f.pl = p; };
+  const idxStock = stock.findIndex(v => v && typeof v === "object");
+  const idxLibre = stock.findIndex(v => !v);
+
+  if (demandasFork.length && idxStock >= 0){
+    const dem = demandasFork.shift();
+    const [sx, sz] = slotStockXZ(idxStock);
+    const p = stock[idxStock]; stock[idxStock] = "t";
+    leg(px, 0); leg(sx, 0); leg(sx, sz - 1.8, 0, () => { pick(p); stock[idxStock] = null; });
+    leg(sx, 0, 1); leg(22, 0); leg(22, dem.bx);
+    leg(17.5, dem.bx, 0, () => {
+      const q = f.pl; f.pl = null;
+      if (q){ G.add(q); q.position.set(16.0, 0.72, dem.bx); q.rotation.set(0, 0, 0); slidePallets.push({ mesh:q, cam:dem.cam }); }
+    });
+    leg(22, dem.bx, 1); leg(22, 0);
+  } else if (demandasFork.length && !outQ.length && idxStock < 0){
+    // Si aún no hay paleta física en stock visual, igual completar la entrega visual al camión
+    const dem = demandasFork.shift();
+    const q = crearPaletaMesh(dem.cam ? dem.cam.prod.color : 0xd9b97a);
+    leg(px, 0); leg(22, 0); leg(22, dem.bx);
+    leg(17.5, dem.bx, 0, () => {
+      G.add(q); q.position.set(16.0, 0.72, dem.bx);
+      slidePallets.push({ mesh:q, cam:dem.cam });
+    });
+    leg(22, dem.bx, 1); leg(22, 0);
+  } else if (outQ.length && idxLibre >= 0){
+    const p = outQ.pop();
+    const [sx, sz] = slotStockXZ(idxLibre);
+    stock[idxLibre] = "r";
+    leg(px, 0); leg(42.2, 0);
+    leg(42.2, p.position.z - 1.8, 0, () => { pick(p); });
+    leg(42.2, 0, 1); leg(sx, 0);
+    leg(sx, sz - 1.8, 0, () => {
+      const q = f.pl; f.pl = null;
+      if (q){ G.add(q); q.position.set(sx, 0.3, sz); stock[idxLibre] = q; }
+    });
+    leg(sx, 0, 1); leg(28, pz);
+  }
+}
+
+function animarForks(dt){
+  Escena.forks.forEach(f => {
+    if (!f.g.visible || f.averiado) return;
+    planFork(f);
+    const l = f.q[0];
+    if (!l) return;
+    const dx = l.x - f.g.position.x, dz = l.z - f.g.position.z, d = Math.hypot(dx, dz), st = 6.0 * dt;
+    if (!l.rev && d > 0.05) f.g.rotation.y = Math.atan2(dx, dz);
+    if (d <= st){
+      f.g.position.x = l.x; f.g.position.z = l.z;
+      if (l.fn) l.fn();
+      f.q.shift();
+    } else {
+      f.g.position.x += dx / d * st;
+      f.g.position.z += dz / d * st;
+    }
+  });
+}
+
+function animarOperarios(dt, tm){
+  AR.forEach((a, i) => {
+    const busy = S[i].b;
+    WS[i].torso.forEach((m, j) => m.material.color.setHex(j < busy ? 0xf28c28 : 0x8aa0ae));
+    WS[i].p.forEach((p, j) => {
+      const on = j < busy;
+      const pts = ptsOf(i, j);
+      const u = p.userData;
+      const q = pts[(u.k || 0) % pts.length];
+      const dx = q[0] - p.position.x, dz = q[1] - p.position.z, d = Math.hypot(dx, dz);
+      const bL = WS[i].brazoL[j], bR = WS[i].brazoR[j];
+      if (on && d > 0.12){
+        const st = Math.min(d, 1.5 * dt);
+        p.position.x += dx / d * st; p.position.z += dz / d * st;
+        p.rotation.y = Math.atan2(dx, dz);
+        p.position.y = Math.abs(Math.sin(tm * 8)) * 0.05;
+        bL.rotation.x = Math.sin(tm * 8) * 0.6;
+        bR.rotation.x = -Math.sin(tm * 8) * 0.6;
+      } else {
+        p.position.y = 0;
+        if (on){
+          u.w = (u.w || 0) + dt;
+          bL.rotation.x = Math.sin(tm * 7 + j) * 0.7 - 0.5;
+          bR.rotation.x = Math.sin(tm * 7 + j + 1.5) * 0.7 - 0.5;
+          if (pts.length > 1 && u.w > 2.2){ u.k = (u.k || 0) + 1; u.w = 0; }
+        } else {
+          bL.rotation.x = 0; bR.rotation.x = 0;
+        }
+      }
+    });
+  });
+
+  WN.forEach(w => {
+    const p = w.g.position, dx = w.tx - p.x, dz = w.tz - p.z, d = Math.hypot(dx, dz);
+    if (d < 0.4){
+      w.tx = 28 + R() * 48;
+      w.tz = R() < 0.5 ? -2.15 : 2.15;
+    } else {
+      p.x += dx / d * w.v * dt;
+      p.z += dz / d * w.v * dt;
+      w.g.rotation.y = Math.atan2(dx, dz);
+    }
+  });
+}
+
+const _v2 = new THREE.Vector2();
+function puntoEnRuta(pts, p){
+  let total = 0; const largos = [];
+  for (let i = 1; i < pts.length; i++){ const d = pts[i].distanceTo(pts[i - 1]); largos.push(d); total += d; }
+  let meta = p * total;
+  for (let i = 0; i < largos.length; i++){
+    if (meta <= largos[i] || i === largos.length - 1){
+      const f = largos[i] > 0 ? Math.min(meta / largos[i], 1) : 1;
+      const a = pts[i], b = pts[i + 1];
+      _v2.set(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f);
+      return { pos:_v2, tramo:i };
+    }
+    meta -= largos[i];
+  }
+  const u = pts[pts.length - 1]; _v2.set(u.x, u.y);
+  return { pos:_v2, tramo:pts.length - 2 };
+}
+
+function animarCamiones(dtMin){
+  for (let idx = Escena.camiones.length - 1; idx >= 0; idx--){
+    const c = Escena.camiones[idx];
+    if (!c.malla || !c.mov) continue;
+    const m = c.mov;
+    if (m.prog >= 1){
+      if (c.estado === "saliendo" || c.estado === "rechazado"){
+        Escena.borrarCamion(c);
+        Escena.camiones.splice(idx, 1);
+      }
+      continue;
+    }
+    const adv = dtMin / m.dur;
+    const pasos = Math.max(1, Math.ceil(adv * m.largo / 0.8));
+    for (let k = 0; k < pasos && m.prog < 1; k++){
+      const prox = Math.min(1, m.prog + adv / pasos);
+      const r = puntoEnRuta(m.pts, prox);
+      const x = r.pos.x, z = r.pos.y, x0 = c.malla.position.x, z0 = c.malla.position.z;
+      const d = Math.hypot(x - x0, z - z0) || 1, fx = (x - x0) / d, fz = (z - z0) / d;
+      m.prog = prox;
+      c.malla.position.x = x; c.malla.position.z = z;
+      const atras = m.reversa.indexOf(r.tramo) >= 0;
+      let dif = Math.atan2(fx, fz) + (atras ? Math.PI : 0) - c.malla.rotation.y;
+      while (dif > Math.PI) dif -= Math.PI * 2;
+      while (dif < -Math.PI) dif += Math.PI * 2;
+      const maxG = 0.55 * Math.hypot(x - x0, z - z0);
+      c.malla.rotation.y += Math.max(-maxG, Math.min(maxG, dif));
+    }
+  }
+  const cerca = Escena.camiones.some(c => c.malla && c.malla.position.x > -58 && c.malla.position.x < -42 && Math.abs(c.malla.position.z) < 10);
+  const obj = cerca ? -Math.PI / 2.2 : 0;
+  barrera.rotation.x += (obj - barrera.rotation.x) * 0.14;
+}
+
+function actualizarColasVisuales(){
+  AR.forEach((a, i) => {
+    const s = S[i];
+    Q[i].forEach((m, j) => m.visible = j < s.q.length);
+    const pil = tablerosPiloto[i];
+    if (pil) pil.material.color.setHex(s.b > 0 ? 0xf28c28 : 0x2ecc71);
+  });
+}
+
+/* =========================================================================
+   7. CÁMARA (EXTERIOR, VISTA EN PLANTA CENITAL, RECORRER WASD+RATÓN+E)
+   ========================================================================= */
+let mode = "ext", roofOn = true;
+let ya = -0.52, pi = 0.56, rad = 148, tY = -0.52, tP = 0.56, tR = 148;
+let targetExt = new THREE.Vector3(4, 0, -8);
+let targetCur = new THREE.Vector3(4, 0, -8);
+let px = 34, pz = 0, wy = -Math.PI / 2, wp = 0;
+const keys = {};
+
+function setRoof(v){
+  roofOn = v;
+  roof.visible = v;
+  $("bR").textContent = v ? "Quitar techo" : "Poner techo";
+  $("bR").classList.toggle("on", !v);
+}
+
+function setMode(m){
+  if (mode === "walk" && m !== "walk" && document.exitPointerLock){
+    try { document.exitPointerLock(); } catch (_){}
+  }
+  mode = m;
+  [["bE", "ext"], ["bP", "plan"], ["bW", "walk"]].forEach(([id, k]) => $(id).classList.toggle("on", k === m));
+  if (m === "ext"){
+    tY = -0.52; tP = 0.56; tR = 148;
+    targetExt.set(4, 0, -8);
+    setRoof(true);
+  } else if (m === "plan"){
+    tY = 0; tP = 1.54; tR = 92;
+    targetExt.set(42, 0, 0);
+    setRoof(false);
+  } else if (m === "walk"){
+    px = 34; pz = 0; wy = -Math.PI / 2; wp = 0;
+    setRoof(true);
+  }
+}
+
+$("bE").onclick = () => setMode("ext");
+$("bP").onclick = () => setMode("plan");
+$("bW").onclick = () => setMode("walk");
+$("bR").onclick = () => setRoof(!roofOn);
+
+function rotCam(dx, dy){
+  if (mode === "walk"){
+    wy -= dx * 0.004;
+    wp = Math.max(-1.2, Math.min(1.2, wp - dy * 0.004));
+  } else {
+    tY -= dx * 0.006;
+    tP = Math.max(0.15, Math.min(1.55, tP + dy * 0.006));
+  }
+}
+
+let drag = false, dragDist = 0, lx = 0, ly = 0;
+const ray = new THREE.Raycaster(), mouseNDC = new THREE.Vector2();
+cv.addEventListener("mousedown", e => {
+  drag = true; dragDist = 0; lx = e.clientX; ly = e.clientY;
+  if (mode === "walk" && cv.requestPointerLock){
+    try { cv.requestPointerLock(); } catch (_){}
+  }
+});
+addEventListener("mouseup", e => {
+  if (drag && dragDist < 6 && mode !== "walk" && e.target === cv){
+    mouseNDC.x = (e.clientX / innerWidth) * 2 - 1;
+    mouseNDC.y = -(e.clientY / innerHeight) * 2 + 1;
+    ray.setFromCamera(mouseNDC, cam);
+    const hits = ray.intersectObjects(floorHitMeshes, false);
+    if (hits.length && hits[0].object.userData.areaIdx != null){
+      openPanel(hits[0].object.userData.areaIdx);
+    }
+  }
+  drag = false;
+});
+addEventListener("mousemove", e => {
+  if (drag || document.pointerLockElement === cv){
+    const mx = e.movementX || (e.clientX - lx), my = e.movementY || (e.clientY - ly);
+    dragDist += Math.hypot(mx, my);
+    lx = e.clientX; ly = e.clientY;
+    rotCam(mx, my);
+  }
+});
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  tR = Math.max(25, Math.min(200, tR * (1 + e.deltaY * 0.001)));
+}, { passive:false });
+cv.addEventListener("touchstart", e => { lx = e.touches[0].clientX; ly = e.touches[0].clientY; }, { passive:true });
+cv.addEventListener("touchmove", e => {
+  const t = e.touches[0];
+  rotCam(t.clientX - lx, t.clientY - ly);
+  lx = t.clientX; ly = t.clientY;
+}, { passive:true });
+
+const areaAt = () => AR.findIndex(a => px >= a.r[0] && px <= a.r[2] && pz >= a.r[1] && pz <= a.r[3]);
+
+addEventListener("keydown", e => {
+  const tag = e.target && e.target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  const k = e.key.toLowerCase();
+  keys[k] = 1;
+  if (k === "e" && mode === "walk"){
+    const i = areaAt();
+    if (i >= 0){
+      if (document.exitPointerLock) try { document.exitPointerLock(); } catch (_){}
+      openPanel(i);
+    }
+  }
+  if (k === "escape"){ cerrarModales(); $("popAjustes").classList.remove("open"); }
+});
+addEventListener("keyup", e => delete keys[e.key.toLowerCase()]);
+
+function resize(){
+  rd.setSize(innerWidth, innerHeight, false);
+  cam.aspect = innerWidth / innerHeight;
+  cam.updateProjectionMatrix();
+  const topRect = $("top").getBoundingClientRect();
+  const topPx = Math.ceil(topRect.bottom + 8) + "px";
+  $("pan").style.top = topPx;
+  $("popAjustes").style.top = topPx;
+}
+addEventListener("resize", resize);
+resize();
+
+/* =========================================================================
+   8. PANEL POR ÁREA (3 PESTAÑAS: PARÁMETROS + CSV, DISTRIBUCIONES, RESULTADOS)
+   ========================================================================= */
+let cur = -1, tab = 0;
+
+function abrirTab(t){
+  tab = t;
+  document.querySelectorAll("#tb button").forEach(x => x.classList.toggle("on", +x.dataset.t === tab));
+  drawPanel();
+}
+document.querySelectorAll("#tb button").forEach(b => b.onclick = () => abrirTab(+b.dataset.t));
+$("px").onclick = () => {
+  $("pan").classList.remove("open");
+  AR.forEach(a => a.el.classList.remove("sel"));
+  cur = -1;
+};
+
+function openPanel(i){
+  const cambioArea = cur !== i;
+  cur = i;
+  if (cambioArea){
+    tab = 0;
+    document.querySelectorAll("#tb button").forEach(x => x.classList.toggle("on", +x.dataset.t === 0));
+  }
+  const a = AR[i];
+  AR.forEach((ar, idx) => ar.el.classList.toggle("sel", idx === i));
+  $("pan").classList.add("open");
+  $("pt").textContent = a.n;
+  construirPestanaParametros(i);
+  drawPanel();
+}
+
+function construirPestanaParametros(i){
+  const a = AR[i];
+  const p0 = $("p0");
+  p0.replaceChildren();
+
+  // Selector de distribución
+  const selDist = el("select", { id:"sd_" },
+    ...[
+      ["nor", "Normal"],
+      ["tri", "Triangular"],
+      ["log", "Lognormal"],
+      ["exp", "Exponencial"],
+      ["uni", "Uniforme"],
+      ["emp", "Datos cargados"]
+    ].map(([v, t]) => el("option", { txt:t, attrs:Object.assign({ value:v }, (a.dist || "nor") === v ? { selected:"selected" } : {}) }))
+  );
+  p0.appendChild(el("div", { cls:"campo" }, el("label", { txt:"Distribución del servicio", attrs:{ for:"sd_" } }), selDist));
+
+  // Campos numéricos en vivo
+  const campos = [
+    ["lam", "Llegadas externas (lotes/min)", 0.05, 0],
+    ["mu",  "Tiempo medio de servicio (min)", 0.1, 0.15],
+    ["sd",  "Desviación estándar (min)", 0.05, 0],
+    ["c",   "Servidores (operarios / equipos)", 1, 1],
+    ["pf",  "Probabilidad de falla por lote", 0.01, 0]
+  ];
+  const inputsMap = {};
+
+  campos.forEach(([k, label, step, min]) => {
+    if (a[k] == null){
+      if (k === "lam") p0.appendChild(el("div", { cls:"nota", txt:"Esta área recibe lotes directamente de la etapa anterior." }));
+      return;
+    }
+    const inp = el("input", {
+      attrs:{ type:"number", step:String(step), min:String(min), max:k === "c" ? "8" : (k === "pf" ? "1" : "9999"), value:String(+(a[k].toFixed ? a[k].toFixed(3) : a[k])) }
+    });
+    inp.dataset.k = k;
+    inputsMap[k] = inp;
+    inp.oninput = () => {
+      let v = parseFloat(inp.value);
+      if (Number.isNaN(v) || v < min) return;
+      if (k === "c"){ v = Math.max(1, Math.min(8, Math.round(v))); rw(i); }
+      if (k === "mu"){ v = Math.max(0.15, v); }
+      if (k === "pf"){ v = Math.max(0, Math.min(1, v)); }
+      a[k] = v;
+      if (k === "mu" && a.dist === "exp" && inputsMap.sd){
+        inputsMap.sd.value = +v.toFixed(3);
+      }
+      if (k === "c") go(i);
+    };
+    p0.appendChild(el("div", { cls:"campo" }, el("label", { txt:label }), inp));
+  });
+
+  // En Despacho y andén: paletas por camión N configurable
+  if (i === 6){
+    const inpN = el("input", { attrs:{ type:"number", step:"1", min:"2", max:"12", value:String(CFG.paletasPorCamion) } });
+    inpN.oninput = () => {
+      const v = parseInt(inpN.value, 10);
+      if (Number.isNaN(v) || v < 2 || v > 12) return;
+      CFG.paletasPorCamion = v;
+      verificarCamionesPorCambioN();
+      actualizarResumenPlanta();
+    };
+    p0.appendChild(el("div", { cls:"campo" }, el("label", { txt:"Paletas por camión (N)" }), inpN));
+  }
+
+  const notaExp = el("div", { cls:"nota", id:"notaExp", txt:"En distribución Exponencial la desviación está fijada a σ = μ." });
+  p0.appendChild(notaExp);
+
+  function syncExpLock(){
+    const esExp = (a.dist || "nor") === "exp";
+    notaExp.style.display = esExp ? "block" : "none";
+    if (inputsMap.sd){
+      inputsMap.sd.disabled = esExp;
+      inputsMap.sd.value = esExp ? +a.mu.toFixed(3) : +a.sd.toFixed(3);
+    }
+  }
+  syncExpLock();
+  selDist.onchange = () => {
+    a.dist = selDist.value;
+    syncExpLock();
+    if (tab === 1) drawPanel();
+  };
+
+  p0.appendChild(el("div", { cls:"nota", txt:"Todos los cambios se aplican en vivo sobre la simulación en curso. Cada lote representa una paleta de productos de pintura." }));
+
+  // Bloque prioritario de carga de datos CSV / TXT / pegado
+  const bloqueCSV = el("div", { cls:"bloqueCSV" });
+  bloqueCSV.appendChild(el("h4", { txt:"Cargar datos de tiempo de servicio (.csv / .txt)" }));
+  bloqueCSV.appendChild(el("div", { cls:"nota", txt:"Pegue tiempos en minutos o suba un archivo .csv / .txt. La simulación remuestrea sus valores y actualiza la media y la desviación muestral (n − 1)." }));
+
+  const ta = el("textarea", { id:"em", attrs:{ rows:"3", placeholder:"Ejemplo: 1.8, 2.1, 2.4, 1.9" } });
+  ta.value = (a.emp || []).slice(0, 500).join(" ");
+  bloqueCSV.appendChild(ta);
+
+  const fileInp = el("input", { id:"ef", attrs:{ type:"file", accept:".txt,.csv" } });
+  bloqueCSV.appendChild(fileInp);
+
+  const selCol = el("select", { id:"csvCol" });
+  const colRow = el("div", { id:"csvColRow" }, el("label", { txt:"Columna numérica:", attrs:{ for:"csvCol" } }), selCol);
+  bloqueCSV.appendChild(colRow);
+
+  const btnAplicar = el("button", { id:"ea", cls:"prim", txt:"Usar estos datos" });
+  const btnLimpiar = el("button", { id:"eclear", txt:"Limpiar texto" });
+  bloqueCSV.appendChild(el("div", { cls:"accionesCSV" }, btnAplicar, btnLimpiar));
+
+  const estadoCSV = el("div", { id:"ec", attrs:{ role:"alert" } });
+  if (a.emp && a.emp.length){
+    estadoCSV.className = "ok";
+    estadoCSV.textContent = "Activos: " + a.emp.length + " valores (" + (a.empCol || "muestra") + "), media " + a.mu.toFixed(2) + " min, desv. est. " + a.sd.toFixed(2) + " min.";
+  }
+  bloqueCSV.appendChild(estadoCSV);
+  p0.appendChild(bloqueCSV);
+
+  let ultimoParseMulti = null;
+  let ultimoNombreArchivo = "";
+
+  function mostrarErrorCSV(msg){
+    estadoCSV.className = "err";
+    estadoCSV.textContent = "Rechazado: " + msg + " Los datos previos del área no se modificaron.";
+  }
+
+  function aplicarColumnaSeleccionada(parseRes, colIdx){
+    const col = parseRes.columnas[colIdx];
+    if (!col || !col.valores || col.valores.length < 2){
+      mostrarErrorCSV("La columna seleccionada no tiene al menos 2 observaciones válidas.");
+      return;
+    }
+    const vals = col.valores;
+    const m = avg(vals), sdM = stdMuestral(vals);
+    a.emp = vals;
+    a.empCol = col.nombre;
+    a.dist = "emp";
+    a.mu = Math.max(0.15, m);
+    a.sd = sdM;
+    selDist.value = "emp";
+    syncExpLock();
+    if (inputsMap.mu) inputsMap.mu.value = +a.mu.toFixed(3);
+    if (inputsMap.sd) inputsMap.sd.value = +a.sd.toFixed(3);
+    estadoCSV.className = "ok";
+    estadoCSV.textContent = "Cargados " + vals.length + " valores (" + col.nombre + "): media " + a.mu.toFixed(2) + " min, desv. est. (n−1) " + a.sd.toFixed(2) + " min.";
+    if (tab === 1) drawPanel();
+  }
+
+  function procesarEntrada(texto, nombreArch, desdeArchivo){
+    const res = parsearDatosServicio(texto, nombreArch);
+    if (!res.ok){
+      ultimoParseMulti = null;
+      colRow.classList.remove("vis");
+      selCol.replaceChildren();
+      mostrarErrorCSV(res.error);
+      return;
+    }
+    if (res.columnas.length > 1){
+      ultimoParseMulti = res;
+      selCol.replaceChildren();
+      res.columnas.forEach((c, idx) => {
+        const opt = el("option", { txt:c.nombre + " (" + c.valores.length + " valores)", attrs:{ value:String(idx) } });
+        if (idx === res.preferida) opt.selected = true;
+        selCol.appendChild(opt);
+      });
+      colRow.classList.add("vis");
+      if (desdeArchivo){
+        estadoCSV.className = "ok";
+        estadoCSV.textContent = "Se detectaron " + res.columnas.length + " columnas numéricas. Elija la columna deseada y pulse «Usar estos datos» (actualmente preseleccionada: " + res.columnas[res.preferida].nombre + ").";
+      } else {
+        aplicarColumnaSeleccionada(res, +selCol.value || 0);
+      }
+    } else {
+      ultimoParseMulti = null;
+      colRow.classList.remove("vis");
+      selCol.replaceChildren();
+      aplicarColumnaSeleccionada(res, 0);
+    }
+  }
+
+  btnAplicar.onclick = () => {
+    if (ultimoParseMulti && selCol.options.length > 1){
+      // Si el usuario no alteró manualmente el textarea respecto a la carga del archivo, usar la columna elegida
+      aplicarColumnaSeleccionada(ultimoParseMulti, parseInt(selCol.value, 10) || 0);
+    } else {
+      procesarEntrada(ta.value, ultimoNombreArchivo, false);
+    }
+  };
+  selCol.onchange = () => {
+    if (ultimoParseMulti) aplicarColumnaSeleccionada(ultimoParseMulti, parseInt(selCol.value, 10) || 0);
+  };
+  ta.oninput = () => { ultimoParseMulti = null; ultimoNombreArchivo = ""; colRow.classList.remove("vis"); };
+  btnLimpiar.onclick = () => {
+    ta.value = ""; ultimoParseMulti = null; ultimoNombreArchivo = "";
+    colRow.classList.remove("vis"); selCol.replaceChildren();
+    estadoCSV.className = ""; estadoCSV.style.display = "none";
+  };
+
+  fileInp.onchange = () => {
+    const f = fileInp.files && fileInp.files[0];
+    if (!f) return;
+    if (!/\.(csv|txt)$/i.test(f.name)){
+      mostrarErrorCSV("Formato de archivo no válido («" + f.name + "»). Solo se aceptan .csv o .txt.");
+      return;
+    }
+    if (f.size === 0){
+      mostrarErrorCSV("El archivo está vacío (0 bytes).");
+      return;
+    }
+    if (f.size > 5 * 1024 * 1024){
+      mostrarErrorCSV("El archivo supera el límite de 5 MB.");
+      return;
+    }
+    ultimoNombreArchivo = f.name;
+    f.text().then(txt => {
+      ta.value = txt.slice(0, 250000);
+      procesarEntrada(txt, f.name, true);
+    }).catch(() => mostrarErrorCSV("No fue posible leer el archivo."));
+  };
+}
+
+function hist(cvCanvas, datos, col, pdfFn){
+  const x = cvCanvas.getContext("2d"), W = cvCanvas.width, H = cvCanvas.height;
+  x.clearRect(0, 0, W, H);
+  x.fillStyle = "#e6edf3"; x.font = "11px sans-serif";
+  const d = datos.slice(-2000);
+  if (d.length < 4){ x.fillText("Aún no hay datos suficientes (mínimo 4).", 12, 24); return; }
+
+  let lo = Math.min(...d), hi = Math.max(...d);
+  if (hi - lo < 1e-6){ lo = Math.max(0, lo - 0.5); hi = hi + 0.5; }
+  else hi += 1e-9;
+
+  const nb = 14, bw = (hi - lo) / nb, ct = Array(nb).fill(0);
+  d.forEach(v => ct[Math.min(nb - 1, Math.floor((v - lo) / bw))]++);
+  const mx = Math.max(1, ...ct), pw = (W - 36) / nb, ph = H - 36;
+
+  x.fillStyle = col;
+  ct.forEach((n, j) => {
+    const bh = n / mx * ph;
+    x.fillRect(22 + j * pw + 1, H - 20 - bh, Math.max(1, pw - 2), bh);
+  });
+
+  if (pdfFn){
+    x.strokeStyle = "#f0883e"; x.lineWidth = 2.2; x.beginPath();
+    for (let j = 0; j <= 64; j++){
+      const v = lo + (hi - lo) * j / 64;
+      const f = pdfFn(v) * d.length * bw;
+      const X = 22 + j / 64 * (W - 36);
+      const Yy = Math.max(4, H - 20 - f / mx * ph);
+      if (j === 0) x.moveTo(X, Yy); else x.lineTo(X, Yy);
+    }
+    x.stroke();
+  }
+
+  x.fillStyle = "#9aa5b1";
+  x.fillText(lo.toFixed(1), 22, H - 5);
+  x.fillText(hi.toFixed(1) + " min", W - 56, H - 5);
+  x.fillText("n = " + d.length, W / 2 - 18, 13);
+}
+
+function lineChartCanvas(cvCanvas, d, col){
+  const x = cvCanvas.getContext("2d"), W = cvCanvas.width, H = cvCanvas.height;
+  x.clearRect(0, 0, W, H);
+  x.fillStyle = "#e6edf3"; x.font = "11px sans-serif";
+  if (d.length < 2){ x.fillText("Aún no hay datos suficientes.", 12, 24); return; }
+  const mx = Math.max(1, ...d);
+  x.strokeStyle = col; x.lineWidth = 1.8; x.beginPath();
+  d.forEach((v, j) => {
+    const X = 26 + j / (d.length - 1) * (W - 34);
+    const Yy = H - 20 - v / mx * (H - 32);
+    if (j === 0) x.moveTo(X, Yy); else x.lineTo(X, Yy);
+  });
+  x.stroke();
+  x.fillStyle = "#9aa5b1";
+  x.fillText(String(mx), 6, 14);
+  x.fillText("0", 10, H - 20);
+  x.fillText("minutos simulados (últimos " + d.length + ")", W / 2 - 74, H - 5);
+}
+
+function drawPanel(){
+  if (cur < 0) return;
+  ["p0", "p1", "p2"].forEach((id, j) => $(id).hidden = j !== tab);
+  const a = AR[cur], s = S[cur];
+  up(cur);
+
+  if (tab === 1){
+    const nombresDist = { nor:"Normal", tri:"Triangular", log:"Lognormal", exp:"Exponencial", uni:"Uniforme", emp:"Datos cargados" };
+    $("notaDist").textContent = "Tiempo de servicio observado (barras) y curva teórica (" + (nombresDist[a.dist || "nor"]) + ").";
+    hist($("h1"), s.s, "#58a6ff", pdfOf(a));
+    hist($("h2"), s.w, "#f0883e", null);
+  }
+  if (tab === 2){
+    const f = (v, n = 2) => v.toFixed(n);
+    const filas = [
+      ["Lotes que llegaron", String(s.ar)],
+      ["Lotes atendidos", String(s.dn)],
+      ["En cola ahora", String(s.q.length)],
+      ["En servicio ahora", s.b + " de " + a.c],
+      ["Utilización de servidores", T > 0 ? f(100 * s.bi / (a.c * T), 1) + " %" : "0 %"],
+      ["Cola promedio Lq", T > 0 ? f(s.qi / T) : "0"],
+      ["Cola máxima", String(s.mq)],
+      ["Espera media Wq (min)", f(avg(s.w))],
+      ["Espera máxima (min)", f(Math.max(0, ...s.w.slice(-3000)))],
+      ["Servicio medio (min)", f(avg(s.s))],
+      ["Producción (lotes/h)", T > 0 ? f(60 * s.dn / T, 1) : "0"]
+    ];
+    if (cur === 6){
+      filas.push(["Camiones despachados", String(camionesDespachados)]);
+      filas.push(["Paletas por camión (N)", String(CFG.paletasPorCamion)]);
+    }
+    const tbl = $("rs");
+    tbl.replaceChildren();
+    filas.forEach(([k, v]) => {
+      tbl.appendChild(el("tr", null, el("td", { txt:k }), el("td", { txt:v })));
+    });
+    lineChartCanvas($("h3"), s.qs, "#58a6ff");
+  }
+}
+setInterval(drawPanel, 500);
+
+/* =========================================================================
+   9. GRÁFICO GLOBAL EN VIVO (Chart.js) Y RESUMEN DE PLANTA
+   ========================================================================= */
+const grafCola = new Chart($("grafCola").getContext("2d"), {
+  type:"line",
+  data:{
+    labels:[],
+    datasets:[{
+      label:"Camiones en patio",
+      data:[],
+      borderColor:"#58a6ff",
+      backgroundColor:"rgba(88,166,255,.16)",
+      borderWidth:1.8,
+      fill:true,
+      pointRadius:0,
+      stepped:true
+    }]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false, animation:false,
+    scales:{
+      x:{ display:false },
+      y:{ min:0, suggestedMax:8, ticks:{ color:"#9aa5b1", font:{ size:9 }, stepSize:4 }, grid:{ color:"rgba(139,148,158,.15)" } }
+    },
+    plugins:{ legend:{ display:false } }
+  }
+});
+
+function actualizarResumenPlanta(){
+  $("kPatio").textContent = colaPatio.length + " / " + K_COLA_PATIO;
+  $("kCam").textContent = camionesDespachados + " cam.";
+  $("kN").textContent = String(CFG.paletasPorCamion);
+  $("kUSD").textContent = "$" + ingresosUSD.toLocaleString("es-BO");
+
+  const am = $("andenesMini");
+  am.replaceChildren();
+  andenesState.forEach((a, i) => {
+    const cls = a.estado === 2 ? "fuera" : a.estado === 1 ? "ocupado" : "libre";
+    const txt = a.estado === 2
+      ? "Andén " + (i + 1) + ": Fuera de servicio"
+      : a.estado === 1 && a.camion
+        ? "Andén " + (i + 1) + ": " + a.camion.paletas + "/" + CFG.paletasPorCamion + " pal."
+        : "Andén " + (i + 1) + ": Libre";
+    am.appendChild(el("span", { cls:"chipAnden " + cls, txt }));
+  });
+
+  grafCola.data.labels = histPatioMin.map(m => m + "m");
+  grafCola.data.datasets[0].data = histColaPatio;
+  grafCola.update("none");
+}
+
+$("bToggleRes").onclick = () => {
+  const c = $("resCuerpo");
+  const oculto = c.style.display === "none";
+  c.style.display = oculto ? "block" : "none";
+  $("bToggleRes").textContent = oculto ? "Ocultar" : "Mostrar";
+};
+
+/* =========================================================================
+   10. AJUSTES RÁPIDOS, CONTROLES DE TIEMPO, EXCEL (.XLSX) Y CSV
+   ========================================================================= */
+function construirAjustesRapidos(){
+  const cont = $("listaAjustes");
+  cont.replaceChildren();
+  AJUSTES_RAPIDOS.forEach(aj => {
+    const b = el("button", { cls:"presetBtn" + (CFG.ajusteActual === aj.id ? " on" : "") },
+      el("b", { txt:aj.nombre }),
+      el("small", { txt:aj.desc })
+    );
+    b.onclick = () => { aplicarAjuste(aj.id); $("popAjustes").classList.remove("open"); };
+    cont.appendChild(b);
+  });
+}
+
+function aplicarAjuste(id){
+  const aj = AJUSTES_RAPIDOS.find(x => x.id === id) || AJUSTES_RAPIDOS[0];
+  CFG.ajusteActual = aj.id;
+  CFG.andenesTotal = aj.andenes;
+  CFG.forksTotal = aj.forks;
+  CFG.caidos = aj.caidos.slice();
+  CFG.eco = aj.eco;
+  CFG.prioFlota = aj.prio;
+  CFG.fallaFork = aj.fallaFork;
+  CFG.paletasPorCamion = aj.N;
+  AR[0].lam = aj.lam0;
+  AR[6].pf = aj.pfDesp;
+  construirAjustesRapidos();
+  resetSim();
+  if (cur >= 0) construirPestanaParametros(cur);
+  drawPanel();
+  actualizarResumenPlanta();
+  mostrarToast("Ajuste aplicado: " + aj.nombre + ".");
+}
+
+$("bAj").onclick = () => $("popAjustes").classList.toggle("open");
+$("bPa").onclick = e => { paused = !paused; e.target.textContent = paused ? "Reanudar" : "Pausa"; };
+document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
+  sp = +b.dataset.s;
+  document.querySelectorAll("[data-s]").forEach(x => x.classList.toggle("on", x === b));
+});
+$("bRe").onclick = () => { resetSim(); drawPanel(); actualizarResumenPlanta(); };
+$("b8h").onclick = () => simularTurno8h();
+$("bSnd").onclick = function(){ Snd.asegurar(); Snd.activo = !Snd.activo; this.textContent = Snd.activo ? "🔊" : "🔇"; };
+
+let toastTimer = null;
+function mostrarToast(msg){
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("vis");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("vis"), 4500);
+}
+
+// Exportación a Excel (.xlsx de 4 hojas) con ventana de confirmación propia
+function construirWorkbook(){
+  const rows = [["Área", "Distribución", "Media (min)", "Desv. est. (min)", "Servidores", "Llegaron", "Atendidos", "En cola", "Utilización %", "Cola promedio Lq", "Cola máxima", "Espera media Wq (min)", "Servicio medio (min)", "Lotes/h"]];
+  AR.forEach((a, i) => {
+    up(i);
+    const s = S[i], f = (v, n) => +v.toFixed(n);
+    rows.push([
+      a.n, a.dist || "nor", f(a.mu, 3), f(a.dist === "exp" ? a.mu : a.sd, 3), a.c, s.ar, s.dn, s.q.length,
+      T > 0 ? f(100 * s.bi / (a.c * T), 1) : 0,
+      T > 0 ? f(s.qi / T, 3) : 0,
+      s.mq, f(avg(s.w), 3), f(avg(s.s), 3),
+      T > 0 ? f(60 * s.dn / T, 2) : 0
+    ]);
+  });
+  const tb = k => {
+    const r = [AR.map(a => a.n)];
+    const n = Math.min(5000, Math.max(0, ...S.map(s => s[k].length)));
+    for (let j = 0; j < n; j++) r.push(S.map(s => s[k][j] != null ? +Number(s[k][j]).toFixed(3) : ""));
+    return XLSX.utils.aoa_to_sheet(r);
+  };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "Resumen por área");
+  XLSX.utils.book_append_sheet(wb, tb("s"), "Tiempos de servicio");
+  XLSX.utils.book_append_sheet(wb, tb("w"), "Tiempos de espera");
+  XLSX.utils.book_append_sheet(wb, tb("qs"), "Cola por minuto");
+  return wb;
+}
+
+$("bX").onclick = () => {
+  const ul = $("listaHojasExcel");
+  ul.replaceChildren();
+  const totS = S.reduce((a, s) => a + s.s.length, 0);
+  const totW = S.reduce((a, s) => a + s.w.length, 0);
+  const maxQ = Math.max(0, ...S.map(s => s.qs.length));
+  [
+    ["1. Resumen por área", "9 áreas"],
+    ["2. Tiempos de servicio", totS + " registros"],
+    ["3. Tiempos de espera", totW + " registros"],
+    ["4. Cola por minuto", maxQ + " minutos"]
+  ].forEach(([hoja, det]) => {
+    ul.appendChild(el("li", null, el("b", { txt:hoja }), el("span", { txt:det })));
+  });
+  $("notaExcel").textContent = "Reloj simulado actual: " + fmtReloj(T) + " · Camiones despachados: " + camionesDespachados + ".";
+  $("modalExcel").classList.add("abierto");
+};
+$("btnCancelExcel").onclick = () => $("modalExcel").classList.remove("abierto");
+$("btnConfirmExcel").onclick = () => {
+  const wb = construirWorkbook();
+  guardarArchivo("simulacion_american_chemical.xlsx", new Uint8Array(XLSX.write(wb, { bookType:"xlsx", type:"array" })), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  $("modalExcel").classList.remove("abierto");
+  mostrarToast("Archivo simulacion_american_chemical.xlsx descargado (4 hojas).");
+};
+
+
+// Guardado de archivos: dentro de claude.ai usa la capacidad «downloads»; fuera, un enlace de descarga.
+let _dl = null; try { if (window.claude && claude.use) claude.use("downloads").then(d => { _dl = d; }).catch(() => {}); } catch (e) {}
+async function guardarArchivo(nombre, datos, tipo) {
+  if (_dl) { try { await _dl.save({ filename: nombre, data: datos }); return true; } catch (e) { if (e && e.code === "declined") return false; } }
+  const blob = datos instanceof Blob ? datos : new Blob([datos], { type: tipo || "application/octet-stream" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nombre;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400); return true;
+}
+// Exportación CSV de camiones (conservada del archivo del grupo)
+$("bCSV").onclick = () => {
+  const cab = ["ID","TipoCamion","Producto","PaletasCargadas","HoraLlegada","InicioAnden","HoraSalida","EsperaMin","PermanenciaMin","Toneladas","GananciaUSD","Rechazado"];
+  const esc = s => '"' + String(s == null ? "" : s).replace(/"/g, '""') + '"';
+  const filas = camionesLog.map(r => [r.id, r.tipo, r.producto, r.paletas, r.llegada, r.inicio, r.salida, r.esperaMin, r.permanenciaMin, r.ton, r.usd, r.rechazado].map(esc).join(","));
+  const csv = "\uFEFF" + cab.join(",") + "\n" + filas.join("\n");
+  const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+  guardarArchivo("american_chemical_despacho.csv", blob, "text/csv");
+  mostrarToast("Archivo CSV de despacho descargado (" + camionesLog.length + " registros).");
+};
+
+// Ayuda
+function cerrarModales(){
+  $("modalExcel").classList.remove("abierto");
+  $("modalAyuda").classList.remove("abierto");
+}
+$("bAyuda").onclick = () => $("modalAyuda").classList.add("abierto");
+$("btnOkAyuda").onclick = () => $("modalAyuda").classList.remove("abierto");
+
+addEventListener("click", () => Snd.asegurar(), { once:true });
+
+/* =========================================================================
+   11. BUCLE PRINCIPAL DE RENDER Y SIMULACIÓN
+   ========================================================================= */
+function fmtReloj(t){ return Math.floor(t / 60) + " h " + String(Math.floor(t % 60)).padStart(2, "0") + " min"; }
+
+const V = new THREE.Vector3();
+let t0 = performance.now(), acumRes = 0;
+
+function frame(now){
+  const dt = Math.min((now - t0) / 1000, 0.1);
+  t0 = now;
+  const dtSim = paused ? 0 : dt * sp;
+  const dtVis = paused ? 0 : dt * Math.min(6, 0.8 + sp * 0.12);
+
+  if (!paused){
+    stepDES(dtSim);
+    animarFlujo(dtVis);
+    animarForks(dtVis);
+    animarOperarios(dtVis, now / 1000);
+    animarCamiones(Math.max(dtSim * 0.25, dt * 0.6));
+  }
+
+  actualizarColasVisuales();
+  spin.forEach(s => { if (S[s.i].b > 0) s.m.rotation.y += dt * 1.6; });
+
+  if (mode === "walk"){
+    const f = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0);
+    const r = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+    const v = 7.5 * dt;
+    if (keys.arrowleft) wy += dt * 1.8;
+    if (keys.arrowright) wy -= dt * 1.8;
+    px = Math.max(-54, Math.min(79, px + (-Math.sin(wy) * f + Math.cos(wy) * r) * v));
+    pz = Math.max(-32, Math.min(20, pz + (-Math.cos(wy) * f - Math.sin(wy) * r) * v));
+    cam.position.set(px, 1.7, pz);
+    cam.rotation.set(wp, wy, 0);
+  } else {
+    const k = 1 - Math.exp(-6 * dt);
+    ya += (tY - ya) * k; pi += (tP - pi) * k; rad += (tR - rad) * k;
+    targetCur.lerp(targetExt, k);
+    cam.position.set(
+      targetCur.x + rad * Math.cos(pi) * Math.sin(ya),
+      targetCur.y + rad * Math.sin(pi),
+      targetCur.z + rad * Math.cos(pi) * Math.cos(ya)
+    );
+    cam.lookAt(targetCur);
+  }
+
+  AR.forEach(a => {
+    V.copy(a.c3).project(cam);
+    const near = Math.hypot(a.c3.x - cam.position.x, a.c3.z - cam.position.z) < 24;
+    const show = V.z < 1 && (mode === "walk" ? near : !roofOn);
+    a.el.style.display = show ? "" : "none";
+    if (show){
+      a.el.style.left = (V.x * 0.5 + 0.5) * innerWidth + "px";
+      a.el.style.top = (-V.y * 0.5 + 0.5) * innerHeight + "px";
+    }
+  });
+
+  const wip = S.slice(0, 7).reduce((n, s) => n + s.q.length + s.b, 0);
+  const ai = mode === "walk" ? areaAt() : -1;
+  $("hudMain").textContent = "Reloj: " + fmtReloj(T) + " · Paletas despachadas: " + S[6].dn + " · Camiones: " + camionesDespachados + " · En proceso: " + wip;
+  $("hudHelp").textContent = mode === "walk"
+    ? "Use WASD o las flechas para desplazarse y arrastre para mirar" + (ai >= 0 ? " · Presione E para abrir: " + AR[ai].n : " · Está en el pasillo o patio")
+    : mode === "plan"
+      ? "Haga clic en el nombre de un área para editar sus parámetros, cargar CSV o ver resultados"
+      : "Arrastre para girar, use la rueda para acercar. Quite el techo para ver las 9 áreas";
+
+  acumRes += dt;
+  if (acumRes > 0.35){
+    actualizarResumenPlanta();
+    acumRes = 0;
+  }
+
+  rd.render(G, cam);
+  requestAnimationFrame(frame);
+}
+
+construirAjustesRapidos();
+resetSim();
+actualizarResumenPlanta();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
