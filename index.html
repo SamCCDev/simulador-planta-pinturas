@@ -318,6 +318,7 @@
     <h2 id="titAyuda">Guía rápida del simulador</h2>
     <p>Planta completa de pinturas de <b>American Chemical S.R.L.</b> con 9 áreas conectadas desde recepción y dispersión hasta despacho en andenes, caseta de entrada y báscula de salida.</p>
     <p><b>Parámetros:</b> el botón <b>Parámetros</b> de la barra superior (o «Configurar áreas» en el resumen) abre la lista de las 9 áreas; el selector de arriba del panel pasa de un área a otra sin cerrarlo.</p>
+    <p><b>Conducir:</b> en <b>Recorrer</b>, acérquese al montacargas (dentro de la nave) o al camión de reserva (en el patio) y presione <b>E</b> para subir; W/S acelera, frena y da marcha atrás, A/D gira, y <b>E</b> lo baja. El montacargas sólo se puede dejar con paso libre hacia el pasillo central, para que vuelva a operar solo. La simulación no depende del vehículo que usted conduce.</p>
     <p><b>Navegación:</b> Use <b>Exterior</b> (arrastre para girar, rueda para acercar), <b>En planta</b> (cámara cenital sin techo), <b>Quitar techo</b> o <b>Recorrer</b> (camine con <b>WASD</b> o las flechas, mire con el ratón y presione <b>E</b> para abrir el panel del área donde se encuentre).</p>
     <p><b>Datos CSV y distribuciones:</b> Haga clic en cualquier área para abrir su panel, elegir la distribución estadística (Normal, Triangular, Lognormal, Exponencial, Uniforme, Weibull, Erlang/Gamma o Datos cargados) y pegar o cargar archivos <b>.csv</b> o <b>.txt</b> con validación automática. Los generadores siguen la Tabla 3.18: el panel muestra la fórmula con los valores actuales y, en la pestaña Distribuciones, la media, la varianza, la asimetría y la curtosis de la muestra frente a las teóricas. En la lognormal se ingresan la media y la varianza del tiempo.</p>
     <p><b>Ejemplos del catálogo:</b> el selector del panel carga las variables del catálogo de American Chemical (báscula, andén, llenado de tambor, TTR, TBF, tránsito y etapas de envasado). Muchas están en otra escala que las áreas, que atienden una paleta por servicio en unos 2 minutos, así que el panel avisa cuando el área se satura (ρ ≥ 1). Por eso los valores por defecto de las áreas siguen balanceados.</p>
@@ -2495,7 +2496,7 @@ function crearMontacargas(idx){
   g.position.set(24 + idx * 4, 0, 0);
   g.userData.dyn = true;
   G.add(g);
-  Escena.forks.push({ g, chasis:ch, baliza, q:[], pl:null, averiado:false });
+  Escena.forks.push({ g, chasis:ch, baliza, dv, q:[], pl:null, averiado:false, manual:false });
 }
 crearMontacargas(0);
 crearMontacargas(1);
@@ -2603,7 +2604,7 @@ function animarFlujo(dt){
 }
 
 function planFork(f){
-  if (f.q.length || f.averiado) return;
+  if (f.q.length || f.averiado || f.manual) return;
   while (demandasFork.length && demandasFork[0].cam && demandasFork[0].cam.estado !== "anden") demandasFork.shift(); // camión ya salió
   const leg = (x, z, rev, fn) => f.q.push({ x, z, rev, fn });
   const px = f.g.position.x, pz = f.g.position.z;
@@ -2649,7 +2650,7 @@ function planFork(f){
 
 function animarForks(dt){
   Escena.forks.forEach(f => {
-    if (!f.g.visible || f.averiado) return;
+    if (!f.g.visible || f.averiado || f.manual) return;
     planFork(f);
     const l = f.q[0];
     if (!l) return;
@@ -2813,7 +2814,7 @@ function animarCamiones(dtMin){
       const maxG = 0.55 * Math.hypot(x - x0, z - z0), ry = c.malla.rotation.y + Math.max(-maxG, Math.min(maxG, dif));
       // Regla dura: nunca avanzar a una pose cuya huella (con 0,4 m de margen) toque la de otro camión.
       // Si ya se tocaban, sólo se permite el paso que los separa.
-      bloqueo = Escena.camiones.find(o => o !== c && o.malla && huellasCamion(c.malla, o.malla, [x, z, ry]) &&
+      bloqueo = Escena.camiones.concat(camionLibre ? [camionLibre] : []).find(o => o !== c && o.malla && huellasCamion(c.malla, o.malla, [x, z, ry]) &&
         (!huellasCamion(c.malla, o.malla, [x0, z0, c.malla.rotation.y]) ||
          Math.hypot(o.malla.position.x - x, o.malla.position.z - z) <= Math.hypot(o.malla.position.x - x0, o.malla.position.z - z0))) || null;
       if (bloqueo) break;
@@ -2868,6 +2869,7 @@ function setRoof(v){
 }
 
 function setMode(m){
+  if (conducido && m !== "walk") bajarse(true);
   if (mode === "walk" && m !== "walk" && document.exitPointerLock){
     try { document.exitPointerLock(); } catch (_){}
   }
@@ -2948,7 +2950,9 @@ addEventListener("keydown", e => {
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   const k = e.key.toLowerCase();
   keys[k] = 1;
-  if (k === "e" && mode === "walk"){
+  if (k === "e" && mode === "walk" && (conducido || vehiculoCercano())){
+    if (conducido) bajarse(false); else subirse(vehiculoCercano());
+  } else if (k === "e" && mode === "walk"){
     const i = areaAt();
     if (i >= 0){
       if (document.exitPointerLock) try { document.exitPointerLock(); } catch (_){}
@@ -3659,6 +3663,111 @@ function colocarRotulos(){
   });
 }
 
+/* ---------- Conducir en Recorrer: montacargas (dentro de la nave) y camión de reserva (en el patio) ----------
+   E sube al vehículo más cercano (a menos de 3 m) y E vuelve a bajar. La simulación no depende de estos vehículos:
+   al subirse, la tarea en curso del montacargas se completa al instante y, mientras se conduce, no recibe tareas. */
+let conducido = null, camionLibre = null;
+(function crearCamionLibre(){
+  const c = { flota:true, prod:{ color:0x1f4f9a } };
+  Escena.crearCamion(c);
+  Escena.camiones.splice(Escena.camiones.indexOf(c), 1); // no participa de la lógica
+  c.malla.position.set(-30, 0, -21); c.malla.rotation.y = Math.PI / 2;
+  c.libre = true; camionLibre = c;
+})();
+function vehiculoCercano(){
+  const cand = Escena.forks.filter(f => f.g.visible && !f.averiado).map(f => ({ tipo:"fork", f, g:f.g }));
+  if (camionLibre) cand.push({ tipo:"camion", g:camionLibre.malla });
+  let mejor = null, dm = 3.5;
+  cand.forEach(v => {
+    // distancia al cuerpo (para el camión, al punto más cercano de su eje)
+    const g = v.g, fx = Math.sin(g.rotation.y), fz = Math.cos(g.rotation.y), ex = px - g.position.x, ez = pz - g.position.z;
+    const t = v.tipo === "camion" ? Math.max(-6.3, Math.min(4.4, ex * fx + ez * fz)) : 0;
+    const d = Math.hypot(ex - fx * t, ez - fz * t) - (v.tipo === "camion" ? 1.45 : 0.6);
+    if (d < dm){ dm = d; mejor = v; }
+  });
+  return mejor;
+}
+function subirse(v){
+  if (v.tipo === "fork"){
+    const f = v.f;
+    while (f.q.length){ const l = f.q.shift(); f.g.position.x = l.x; f.g.position.z = l.z; if (l.fn) l.fn(); } // completa la tarea en curso
+    f.manual = true; f.dv.visible = false;
+  }
+  conducido = Object.assign(v, { vel:0, aviso:"" });
+  wy = v.g.rotation.y + Math.PI; wp = -0.1; // mirada hacia adelante del vehículo
+  mostrarToast(v.tipo === "fork" ? "Subió al montacargas. E para bajarse." : "Subió al camión. E para bajarse.");
+}
+// Huella del montacargas (local: x ±0,62; z de −1,75 a +2,27) libre en la grilla y dentro de la nave
+function forkLibre(x, z, ry){
+  const c = Math.cos(ry), s = Math.sin(ry);
+  for (const [lx, lz] of [[-0.62, -1.75], [0.62, -1.75], [-0.62, 2.27], [0.62, 2.27], [-0.62, 0.25], [0.62, 0.25], [0, 2.27], [0, -1.75]]){
+    const wx = x + lx * c + lz * s, wz = z - lx * s + lz * c;
+    if (wx < 14.4 || wx > 79.6 || wz < -20.6 || wz > 20.6 || !celdaLibre(wx, wz)) return false;
+    if (PERSONAS.some(p => p.parent && p.visible !== false && (p.position.x - wx) ** 2 + (p.position.z - wz) ** 2 < 0.5 * 0.5)) return false;
+  }
+  return !Escena.forks.some(o => o !== conducido.f && o.g.visible && Math.hypot(o.g.position.x - x, o.g.position.z - z) < 3.2);
+}
+// Obstáculos fijos del patio: postes (círculos) y casetas (rectángulos [x0, z0, x1, z1]).
+const POSTES_PATIO = [[-60, 20], [-40, 20], [-20, 20], [-60, -40], [-40, -40], [-20, -40], [0, 30], [0, -40], [-70, -10], [-14, -25.2]];
+const CASETAS_PATIO = [[-51.2, 3.2, -44.8, 12.3], [-72.6, 10.7, -68.4, 14.3]]; // caseta de entrada con barrera y garita
+// Huella del camión dentro del predio asfaltado, fuera de la nave, sin postes, casetas ni otros camiones
+function camionLibrePose(x, z, ry){
+  const esq = esquinasCamion(x, z, ry, 0.2);
+  for (const [wx, wz] of esq){
+    if (wx < -90 || wx > 12.5 || wz < -46 || wz > 38) return false;
+    if (wx < -73.4 && (wz < -37.5 || wz > 7.5)) return false;            // cerco con el portón abierto
+    if (CASETAS_PATIO.some(([a, b, c, d]) => wx > a && wx < c && wz > b && wz < d)) return false;
+  }
+  // punto en la huella: se pasa a coordenadas locales del camión
+  const c = Math.cos(ry), sn = Math.sin(ry);
+  const dentro = (qx, qz, r) => { const dx = qx - x, dz = qz - z, lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+    return Math.abs(lx) < 1.65 + r && lz > -6.55 - r && lz < 4.67 + r; };
+  if (POSTES_PATIO.some(([qx, qz]) => dentro(qx, qz, 0.3))) return false;
+  if (CASETAS_PATIO.some(([a, b, cc, d]) => [[a, b], [a, d], [cc, b], [cc, d], [(a + cc) / 2, b], [(a + cc) / 2, d]].some(([qx, qz]) => dentro(qx, qz, 0)))) return false;
+  return !Escena.camiones.some(o => o.malla && huellasCamion(camionLibre.malla, o.malla, [x, z, ry]));
+}
+function conducir(dt){
+  const v = conducido, g = v.g, esFork = v.tipo === "fork";
+  const acel = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0);
+  const giro = (keys.a || keys.arrowleft ? 1 : 0) - (keys.d || keys.arrowright ? 1 : 0);
+  const vmax = esFork ? 3.5 : 8, a = esFork ? 3 : 2.5;
+  v.vel += acel * a * dt;
+  if (!acel) v.vel *= Math.exp(-2.2 * dt);
+  v.vel = Math.max(-vmax * 0.5, Math.min(vmax, v.vel));
+  const rel = wy - (g.rotation.y + Math.PI);
+  const ry = g.rotation.y + giro * dt * (esFork ? 1.6 : 0.6) * Math.min(1, Math.abs(v.vel) / 1.5) * Math.sign(v.vel || 1);
+  const x = g.position.x + Math.sin(ry) * v.vel * dt, z = g.position.z + Math.cos(ry) * v.vel * dt;
+  const libre = esFork ? forkLibre(x, z, ry) : camionLibrePose(x, z, ry);
+  if (libre){ g.position.x = x; g.position.z = z; g.rotation.y = ry; v.aviso = ""; }
+  else if (Math.abs(v.vel) > 0.05){ v.vel = 0; v.aviso = "obstáculo"; }
+  // cámara en el asiento del conductor (en el camión, a la izquierda de la cabina)
+  const [sx, sy, sz] = esFork ? [0, 2.05, -0.5] : [0.55, 2.95, 2.0];
+  const c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y);
+  px = g.position.x + sx * c + sz * sn; pz = g.position.z - sx * sn + sz * c;
+  wy = g.rotation.y + Math.PI + rel;
+  cam.position.set(px, sy, pz);
+  cam.rotation.set(wp, wy, 0);
+}
+function bajarse(forzado){
+  const v = conducido, g = v.g;
+  if (v.tipo === "fork" && !forzado){
+    // vuelve a operar solo: necesita paso libre en línea recta hasta el pasillo central (z = 0)
+    const x = g.position.x, z0 = g.position.z;
+    for (let k = 0; k <= 40; k++){
+      const z = z0 + (0 - z0) * k / 40;
+      if (!celdaLibre(x - 0.62, z) || !celdaLibre(x + 0.62, z) || !celdaLibre(x, z)){
+        mostrarToast("Deje el montacargas con paso libre hacia el pasillo central para bajarse."); return;
+      }
+    }
+  }
+  if (v.tipo === "fork"){ v.f.manual = false; v.f.dv.visible = true; }
+  // el conductor baja por el lado izquierdo
+  const c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y), lado = v.tipo === "fork" ? 1.4 : 2.2;
+  px = g.position.x + lado * c; pz = g.position.z - lado * sn;
+  conducido = null;
+  if (!forzado) mostrarToast("Se bajó del vehículo.");
+}
+
 function frame(now){
   const dt = Math.min((now - t0) / 1000, 0.1);
   t0 = now;
@@ -3676,7 +3785,9 @@ function frame(now){
   actualizarColasVisuales();
   spin.forEach(s => { if (S[s.i].b > 0) s.m.rotation.y += dt * 1.6; });
 
-  if (mode === "walk"){
+  if (mode === "walk" && conducido){
+    conducir(dt);
+  } else if (mode === "walk"){
     const f = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0);
     const r = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
     const v = 7.5 * dt;
@@ -3703,7 +3814,11 @@ function frame(now){
   const wip = S.slice(0, 7).reduce((n, s) => n + s.q.length + s.b, 0);
   const ai = mode === "walk" ? areaAt() : -1;
   $("hudMain").textContent = "Reloj: " + fmtReloj(T) + " · Paletas despachadas: " + S[6].dn + " · Camiones: " + camionesDespachados + " · En proceso: " + wip;
-  $("hudHelp").textContent = mode === "walk"
+  const vc = mode === "walk" && !conducido ? vehiculoCercano() : null;
+  $("hudHelp").textContent = conducido
+    ? "W/S acelera y frena (marcha atrás), A/D gira · E para bajarse" + (conducido.aviso ? " · " + conducido.aviso : "")
+    : vc ? "Presione E para subir al " + (vc.tipo === "fork" ? "montacargas" : "camión") + " · WASD para caminar"
+    : mode === "walk"
     ? "Use WASD o las flechas para desplazarse y arrastre para mirar" + (ai >= 0 ? " · Presione E para abrir: " + AR[ai].n : " · Está en el pasillo o patio")
     : mode === "plan"
       ? "Haga clic en el nombre de un área para editar sus parámetros, cargar CSV o ver resultados"
