@@ -265,6 +265,7 @@
   <div id="hud" class="vidrio">
     <div id="hudMain"></div>
     <small id="hudHelp"></small>
+    <button id="bFork" hidden style="margin-top:6px;padding:3px 10px;font-size:12px" title="Aparece un montacargas propio frente a usted (tecla F)">Traer montacargas (F)</button>
     <div id="toast"></div>
   </div>
 </div>
@@ -318,7 +319,7 @@
     <h2 id="titAyuda">Guía rápida del simulador</h2>
     <p>Planta completa de pinturas de <b>American Chemical S.R.L.</b> con 9 áreas conectadas desde recepción y dispersión hasta despacho en andenes, caseta de entrada y báscula de salida.</p>
     <p><b>Parámetros:</b> el botón <b>Parámetros</b> de la barra superior (o «Configurar áreas» en el resumen) abre la lista de las 9 áreas; el selector de arriba del panel pasa de un área a otra sin cerrarlo.</p>
-    <p><b>Conducir:</b> en <b>Recorrer</b>, acérquese al montacargas (dentro de la nave) o al camión de reserva (en el patio) y presione <b>E</b> para subir; W/S acelera, frena y da marcha atrás, A/D gira, y <b>E</b> lo baja. El montacargas sólo se puede dejar con paso libre hacia el pasillo central, para que vuelva a operar solo. La simulación no depende del vehículo que usted conduce.</p>
+    <p><b>Conducir:</b> en <b>Recorrer</b>, la tecla <b>F</b> (o el botón «Traer montacargas») hace aparecer un montacargas propio frente a usted, dentro de la nave; si ya existe, lo trae de vuelta. En el patio hay además un camión de reserva. Acérquese y presione <b>E</b> para subir; W/S acelera, frena y da marcha atrás, A/D gira, y <b>E</b> lo baja. Estos vehículos no forman parte de la simulación: el montacargas de trabajo sigue operando solo y lo espera si usted le bloquea el paso.</p>
     <p><b>Navegación:</b> Use <b>Exterior</b> (arrastre para girar, rueda para acercar), <b>En planta</b> (cámara cenital sin techo), <b>Quitar techo</b> o <b>Recorrer</b> (camine con <b>WASD</b> o las flechas, mire con el ratón y presione <b>E</b> para abrir el panel del área donde se encuentre).</p>
     <p><b>Datos CSV y distribuciones:</b> Haga clic en cualquier área para abrir su panel, elegir la distribución estadística (Normal, Triangular, Lognormal, Exponencial, Uniforme, Weibull, Erlang/Gamma o Datos cargados) y pegar o cargar archivos <b>.csv</b> o <b>.txt</b> con validación automática. Los generadores siguen la Tabla 3.18: el panel muestra la fórmula con los valores actuales y, en la pestaña Distribuciones, la media, la varianza, la asimetría y la curtosis de la muestra frente a las teóricas. En la lognormal se ingresan la media y la varianza del tiempo.</p>
     <p><b>Ejemplos del catálogo:</b> el selector del panel carga las variables del catálogo de American Chemical (báscula, andén, llenado de tambor, TTR, TBF, tránsito y etapas de envasado). Muchas están en otra escala que las áreas, que atienden una paleta por servicio en unos 2 minutos, así que el panel avisa cuando el área se satura (ρ ≥ 1). Por eso los valores por defecto de las áreas siguen balanceados.</p>
@@ -2496,7 +2497,9 @@ function crearMontacargas(idx){
   g.position.set(24 + idx * 4, 0, 0);
   g.userData.dyn = true;
   G.add(g);
-  Escena.forks.push({ g, chasis:ch, baliza, dv, q:[], pl:null, averiado:false, manual:false });
+  const f = { g, chasis:ch, baliza, dv, q:[], pl:null, averiado:false, manual:false };
+  Escena.forks.push(f);
+  return f;
 }
 crearMontacargas(0);
 crearMontacargas(1);
@@ -2547,7 +2550,7 @@ function personaCerca(p, x, z, r){
 }
 // Vehículo cercano por delante de (x, z) en la dirección (fx, fz)
 function vehiculoDelante(x, z, fx, fz, dist){
-  return Escena.forks.some(f => {
+  return Escena.forks.concat(forkPropio ? [forkPropio] : []).some(f => {
     if (!f.g.visible) return false;
     const dx = f.g.position.x - x, dz = f.g.position.z - z, d = Math.hypot(dx, dz);
     return d < dist && (dx * fx + dz * fz) > 0.3 * d;
@@ -2664,6 +2667,8 @@ function animarForks(dt){
       const pers = PERSONAS.find(p => p.parent && (delante(p.position, 3.0 + st) ||
         Math.hypot(p.position.x - nx, p.position.z - nz) < 1.0 && Math.hypot(p.position.x - nx, p.position.z - nz) < Math.hypot(p.position.x - X, p.position.z - Z)));
       const otro = Escena.forks.some((o, k) => o !== f && o.g.visible && k < Escena.forks.indexOf(f) && delante(o.g.position, 4.0));
+      // ante el montacargas del visitante espera sin plazo: no lo atraviesa
+      if (forkPropio && delante(forkPropio.g.position, 4.0 + st)){ f.espera = 0; return; }
       if (pers || otro){
         f.espera = (f.espera || 0) + dt;
         if (f.espera < 2.5) return;
@@ -2959,6 +2964,7 @@ addEventListener("keydown", e => {
       openPanel(i);
     }
   }
+  if (k === "f" && mode === "walk") aparecerMontacargas();
   if (k === "escape"){ cerrarModales(); $("popAjustes").classList.remove("open"); }
 });
 addEventListener("keyup", e => delete keys[e.key.toLowerCase()]);
@@ -3505,6 +3511,7 @@ function aplicarAjuste(id){
 $("bAj").onclick = () => { $("popAreas").classList.remove("open"); $("popAjustes").classList.toggle("open"); };
 construirListaAreas();
 $("bAreas").onclick = abrirListaAreas;
+$("bFork").onclick = e => { e.currentTarget.blur(); aparecerMontacargas(); };
 $("bConfAreas").onclick = abrirListaAreas;
 $("selArea").onchange = e => openPanel(+e.target.value);
 // aviso de la primera visita (se recuerda en este navegador; si el almacenamiento falla, se muestra igual)
@@ -3675,7 +3682,7 @@ let conducido = null, camionLibre = null;
   c.libre = true; camionLibre = c;
 })();
 function vehiculoCercano(){
-  const cand = Escena.forks.filter(f => f.g.visible && !f.averiado).map(f => ({ tipo:"fork", f, g:f.g }));
+  const cand = forkPropio ? [{ tipo:"fork", f:forkPropio, g:forkPropio.g }] : [];
   if (camionLibre) cand.push({ tipo:"camion", g:camionLibre.malla });
   let mejor = null, dm = 3.5;
   cand.forEach(v => {
@@ -3688,24 +3695,21 @@ function vehiculoCercano(){
   return mejor;
 }
 function subirse(v){
-  if (v.tipo === "fork"){
-    const f = v.f;
-    while (f.q.length){ const l = f.q.shift(); f.g.position.x = l.x; f.g.position.z = l.z; if (l.fn) l.fn(); } // completa la tarea en curso
-    f.manual = true; f.dv.visible = false;
-  }
+  if (v.tipo === "fork") v.f.dv.visible = false;
   conducido = Object.assign(v, { vel:0, aviso:"" });
   wy = v.g.rotation.y + Math.PI; wp = -0.1; // mirada hacia adelante del vehículo
   mostrarToast(v.tipo === "fork" ? "Subió al montacargas. E para bajarse." : "Subió al camión. E para bajarse.");
 }
 // Huella del montacargas (local: x ±0,62; z de −1,75 a +2,27) libre en la grilla y dentro de la nave
-function forkLibre(x, z, ry){
+function forkLibre(x, z, ry, propio){
+  propio = propio || (conducido && conducido.f);
   const c = Math.cos(ry), s = Math.sin(ry);
   for (const [lx, lz] of [[-0.62, -1.75], [0.62, -1.75], [-0.62, 2.27], [0.62, 2.27], [-0.62, 0.25], [0.62, 0.25], [0, 2.27], [0, -1.75]]){
     const wx = x + lx * c + lz * s, wz = z - lx * s + lz * c;
     if (wx < 14.4 || wx > 79.6 || wz < -20.6 || wz > 20.6 || !celdaLibre(wx, wz)) return false;
     if (PERSONAS.some(p => p.parent && p.visible !== false && (p.position.x - wx) ** 2 + (p.position.z - wz) ** 2 < 0.5 * 0.5)) return false;
   }
-  return !Escena.forks.some(o => o !== conducido.f && o.g.visible && Math.hypot(o.g.position.x - x, o.g.position.z - z) < 3.2);
+  return !Escena.forks.concat(forkPropio ? [forkPropio] : []).some(o => o !== propio && o.g.visible && Math.hypot(o.g.position.x - x, o.g.position.z - z) < 3.2);
 }
 // Obstáculos fijos del patio: postes (círculos) y casetas (rectángulos [x0, z0, x1, z1]).
 const POSTES_PATIO = [[-60, 20], [-40, 20], [-20, 20], [-60, -40], [-40, -40], [-20, -40], [0, 30], [0, -40], [-70, -10], [-14, -25.2]];
@@ -3748,19 +3752,35 @@ function conducir(dt){
   cam.position.set(px, sy, pz);
   cam.rotation.set(wp, wy, 0);
 }
-function bajarse(forzado){
-  const v = conducido, g = v.g;
-  if (v.tipo === "fork" && !forzado){
-    // vuelve a operar solo: necesita paso libre en línea recta hasta el pasillo central (z = 0)
-    const x = g.position.x, z0 = g.position.z;
-    for (let k = 0; k <= 40; k++){
-      const z = z0 + (0 - z0) * k / 40;
-      if (!celdaLibre(x - 0.62, z) || !celdaLibre(x + 0.62, z) || !celdaLibre(x, z)){
-        mostrarToast("Deje el montacargas con paso libre hacia el pasillo central para bajarse."); return;
-      }
+// F: aparece (o vuelve) el montacargas propio del visitante frente a él, en un lugar libre dentro de la nave.
+let forkPropio = null;
+function aparecerMontacargas(){
+  if (mode !== "walk") return;
+  if (conducido){ mostrarToast("Bájese del vehículo (E) antes de traer el montacargas."); return; }
+  if (!forkPropio){
+    forkPropio = crearMontacargas(0);
+    Escena.forks.pop(); // fuera de la lógica: no recibe tareas ni cuenta como montacargas de trabajo
+    forkPropio.manual = true; forkPropio.chasis.material.color.setHex(0x2f7fd0); // azul AC, para distinguirlo
+  }
+  const fx = -Math.sin(wy), fz = -Math.cos(wy), ry = Math.atan2(fx, fz) - Math.PI / 2; // de costado, para verlo de perfil
+  const g = forkPropio.g, x0 = g.position.x, z0 = g.position.z, r0 = g.rotation.y;
+  g.position.set(1e4, 0, 1e4); // fuera, para que no se bloquee a sí mismo al buscar lugar
+  for (const d of [4.5, 5.5, 3.8, 6.5, 8]) for (const lat of [0, 1.5, -1.5, 3, -3]){
+    const x = px + fx * d + fz * lat, z = pz + fz * d - fx * lat;
+    if (forkLibre(x, z, ry, forkPropio)){
+      g.position.set(x, 0, z); g.rotation.y = ry;
+      mostrarToast("Montacargas listo. Acérquese y presione E para subir.");
+      return;
     }
   }
-  if (v.tipo === "fork"){ v.f.manual = false; v.f.dv.visible = true; }
+  g.position.set(x0, 0, z0); g.rotation.y = r0;
+  if (x0 > 1e3) { G.remove(g); forkPropio = null; }
+  mostrarToast("No hay lugar libre aquí: el montacargas aparece dentro de la nave, en un pasillo.");
+}
+
+function bajarse(forzado){
+  const v = conducido, g = v.g;
+  if (v.tipo === "fork") v.f.dv.visible = true;
   // el conductor baja por el lado izquierdo
   const c = Math.cos(g.rotation.y), sn = Math.sin(g.rotation.y), lado = v.tipo === "fork" ? 1.4 : 2.2;
   px = g.position.x + lado * c; pz = g.position.z - lado * sn;
@@ -3815,11 +3835,12 @@ function frame(now){
   const ai = mode === "walk" ? areaAt() : -1;
   $("hudMain").textContent = "Reloj: " + fmtReloj(T) + " · Paletas despachadas: " + S[6].dn + " · Camiones: " + camionesDespachados + " · En proceso: " + wip;
   const vc = mode === "walk" && !conducido ? vehiculoCercano() : null;
+  $("bFork").hidden = mode !== "walk" || !!conducido;
   $("hudHelp").textContent = conducido
     ? "W/S acelera y frena (marcha atrás), A/D gira · E para bajarse" + (conducido.aviso ? " · " + conducido.aviso : "")
     : vc ? "Presione E para subir al " + (vc.tipo === "fork" ? "montacargas" : "camión") + " · WASD para caminar"
     : mode === "walk"
-    ? "Use WASD o las flechas para desplazarse y arrastre para mirar" + (ai >= 0 ? " · Presione E para abrir: " + AR[ai].n : " · Está en el pasillo o patio")
+    ? "F trae un montacargas · Use WASD o las flechas para desplazarse y arrastre para mirar" + (ai >= 0 ? " · Presione E para abrir: " + AR[ai].n : " · Está en el pasillo o patio")
     : mode === "plan"
       ? "Haga clic en el nombre de un área para editar sus parámetros, cargar CSV o ver resultados"
       : "Arrastre para girar, use la rueda para acercar. Quite el techo para ver las 9 áreas";
