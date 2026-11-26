@@ -211,6 +211,8 @@
 <div id="popAjustes" class="vidrio">
   <h3>Ajustes rápidos de operación</h3>
   <div id="listaAjustes"></div>
+  <div class="campo" style="margin-top:8px"><label for="semilla">Semilla (opcional; vacía = aleatoria)</label>
+    <input id="semilla" type="number" step="1" min="0" placeholder="Ej.: 2026"></div>
   <p class="nota" style="margin-top:8px">También puede modificar cualquier parámetro, distribución o archivo CSV en vivo desde el panel de cada área.</p>
 </div>
 
@@ -656,7 +658,19 @@ function parsearDatosServicio(textoCrudo, nombreArchivo){
 /* =========================================================================
    3. ALEATORIEDAD, DISTRIBUCIONES Y MOTOR DES DE 9 ÁREAS + CAMIONES
    ========================================================================= */
-const R = Math.random;
+// Semilla opcional (Ajustes rápidos): con semilla, la corrida se repite igual; vacía, usa Math.random.
+// mulberry32, el mismo PRNG que replica referencia/generadores.py.
+function mulberry32(semilla){
+  let a = semilla >>> 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let SEMILLA = null;
+let R = Math.random;
 const rn = () => {
   let u = 0;
   while (!u) u = R();
@@ -967,6 +981,7 @@ function programarFallaFork(){
 
 let fastForwarding = false;
 function resetSim(){
+  R = SEMILLA === null ? Math.random : mulberry32(SEMILLA);
   T = 0; ev = [];
   S = AR.map(() => ({ q:[], b:0, w:[], s:[], dn:0, ar:0, bi:0, qi:0, lt:0, qs:[], mq:0 }));
   AR.forEach((a, i) => { if (a.lam != null) src(i); });
@@ -1718,7 +1733,8 @@ const GEO_AUTO = fundir([
 ]);
 const COL_AUTOS = [0xd8dde2, 0x2b2f35, 0x8a1c1c, 0x1f4f9a, 0x9aa1a7, 0xf2f2ee, 0x3d5a40, 0x6b6f75];
 const autos = [];
-for (let k = 0; k < 11; k++) [[29.5, 0], [44.5, Math.PI]].forEach(([z, ry], f) => { if ((k * 3 + f * 5) % 7 < 5) autos.push([27.7 + k * 4.4, z, ry]); });
+// un auto por cajón, centrado entre sus líneas (cajones de 4,4 × 4,6 m), con cerca de la mitad libres
+for (let k = 0; k < 11; k++) [[31.6, 0], [42.4, Math.PI]].forEach(([z, ry], f) => { if ((k * 5 + f * 3) % 9 < 5) autos.push([27.7 + k * 4.4, z, ry]); });
 const imAutos = new THREE.InstancedMesh(GEO_AUTO, MAT_VC_MET, autos.length);
 autos.forEach(([x, z, ry], k) => {
   _o3.position.set(x, 0, z); _o3.rotation.set(0, ry, 0); _o3.scale.set(1, 1, 1); _o3.updateMatrix();
@@ -2335,7 +2351,7 @@ const WN = [0, 1, 2, 3].map(j => {
   const g = persona({ chaleco:0xf28c28, casco:j % 2 ? 0xffffff : 0xf2c230, barbijo:j === 2 });
   g.position.set(30 + j * 12, 0, j % 2 ? 2.15 : -2.15);
   G.add(g);
-  return { g, tx:30 + j * 12, tz:j % 2 ? 2.15 : -2.15, v:1.6 + R() * 0.6 };
+  return { g, tx:30 + j * 12, tz:j % 2 ? 2.15 : -2.15, v:1.6 + Math.random() * 0.6 };
 });
 WN.forEach(w => PERSONAS.push(w.g));
 
@@ -2551,8 +2567,8 @@ function animarOperarios(dt, tm){
   WN.forEach(w => {
     const r = moverPersona(w.g, w.tx, w.tz, w.v, dt);
     if (r === 0){
-      w.tx = 28 + R() * 48;
-      w.tz = R() < 0.5 ? -2.15 : 2.15;
+      w.tx = 28 + Math.random() * 48; // visual: no consume la secuencia de la simulación
+      w.tz = Math.random() < 0.5 ? -2.15 : 2.15;
     } else pasoPersona(w.g, r === 1 ? tm * 4.5 * w.v : 0, r === 1 ? 0.45 : 0);
   });
 }
@@ -2576,14 +2592,14 @@ function puntoEnRuta(pts, p){
 }
 
 // Huella real del camión (Box3: ancho 2,9 m, de -6,35 a +4,47 m en su eje); prueba de ejes separados.
-let ocultadosCamion = 0;
-function esquinasCamion(g){
-  const c = Math.cos(g.rotation.y), s = Math.sin(g.rotation.y);
-  return [[-1.45, -6.35], [1.45, -6.35], [1.45, 4.47], [-1.45, 4.47]].map(([x, z]) => [g.position.x + x * c + z * s, g.position.z - x * s + z * c]);
+function esquinasCamion(px, pz, ry, mg){
+  const c = Math.cos(ry), s = Math.sin(ry), w = 1.45 + mg, z0 = -6.35 - mg, z1 = 4.47 + mg;
+  return [[-w, z0], [w, z0], [w, z1], [-w, z1]].map(([x, z]) => [px + x * c + z * s, pz - x * s + z * c]);
 }
-function huellasCamion(a, b){
-  if (Math.abs(a.position.x - b.position.x) > 12 || Math.abs(a.position.z - b.position.z) > 12) return false;
-  const A = esquinasCamion(a), B = esquinasCamion(b);
+function huellasCamion(a, b, pa){ // pa: pose candidata [x, z, ry] de a, con 0,4 m de margen
+  const [ax, az, ar, mg] = pa ? [pa[0], pa[1], pa[2], 0.4] : [a.position.x, a.position.z, a.rotation.y, 0];
+  if (Math.abs(ax - b.position.x) > 13 || Math.abs(az - b.position.z) > 13) return false;
+  const A = esquinasCamion(ax, az, ar, mg), B = esquinasCamion(b.position.x, b.position.z, b.rotation.y, 0);
   for (const P of [A, B]) for (let k = 0; k < 4; k++){
     const [x1, z1] = P[k], [x2, z2] = P[(k + 1) % 4], nx = z1 - z2, nz = x2 - x1;
     const pa = A.map(q => q[0] * nx + q[1] * nz), pb = B.map(q => q[0] * nx + q[1] * nz);
@@ -2591,6 +2607,7 @@ function huellasCamion(a, b){
   }
   return true;
 }
+let retrocesosCamion = 0;
 function animarCamiones(dtMin){
   for (let idx = Escena.camiones.length - 1; idx >= 0; idx--){
     const c = Escena.camiones[idx];
@@ -2635,28 +2652,36 @@ function animarCamiones(dtMin){
           || (dn < 5.5 && dn < dist && (ex * fx + ez * fz) > -0.3 * dist); // incorporación lateral en cruces
       }) || null;
       if (bloqueo) break;
-      m.prog = prox;
-      c.malla.position.x = x; c.malla.position.z = z;
       const atras = m.reversa.indexOf(r.tramo) >= 0;
       let dif = Math.atan2(fx, fz) + (atras ? Math.PI : 0) - c.malla.rotation.y;
       while (dif > Math.PI) dif -= Math.PI * 2;
       while (dif < -Math.PI) dif += Math.PI * 2;
-      const maxG = 0.55 * Math.hypot(x - x0, z - z0);
-      c.malla.rotation.y += Math.max(-maxG, Math.min(maxG, dif));
+      const maxG = 0.55 * Math.hypot(x - x0, z - z0), ry = c.malla.rotation.y + Math.max(-maxG, Math.min(maxG, dif));
+      // Regla dura: nunca avanzar a una pose cuya huella (con 0,4 m de margen) toque la de otro camión.
+      // Si ya se tocaban, sólo se permite el paso que los separa.
+      bloqueo = Escena.camiones.find(o => o !== c && o.malla && huellasCamion(c.malla, o.malla, [x, z, ry]) &&
+        (!huellasCamion(c.malla, o.malla, [x0, z0, c.malla.rotation.y]) ||
+         Math.hypot(o.malla.position.x - x, o.malla.position.z - z) <= Math.hypot(o.malla.position.x - x0, o.malla.position.z - z0))) || null;
+      if (bloqueo) break;
+      m.prog = prox;
+      c.malla.position.x = x; c.malla.position.z = z; c.malla.rotation.y = ry;
     }
     c.bloqueadoPor = bloqueo;
     c.espera = bloqueo ? (c.espera || 0) + dtMin : 0;
-    // destrabe: sólo ante un bloqueo mutuo que dure más de 12 min, el camión ignora al otro hasta separarse
-    if (bloqueo && c.espera > 12 && bloqueo.bloqueadoPor === c && !bloqueo.ignorar){ c.ignorar = bloqueo; c.espera = 0; } // sólo uno de los dos pasa
-    if (c.ignorar && (!c.ignorar.malla || c.ignorar.malla.position.distanceTo(c.malla.position) > 12)) c.ignorar = null;
+    // Destrabe de un bloqueo mutuo que dura más de 6 min: uno deja de aplicar las reglas de cortesía con el otro
+    // (la regla dura sigue vigente) y el otro retrocede hasta 3 m por su ruta si ese lugar está libre.
+    if (bloqueo && c.espera > 6 && bloqueo.bloqueadoPor === c && !bloqueo.ignorar){
+      c.ignorar = bloqueo; c.espera = 0;
+      const bm = bloqueo.mov;
+      if (bm && bm.prog > 0){
+        const pr = Math.max(0, bm.prog - 3 / bm.largo), rp = puntoEnRuta(bm.pts, pr).pos;
+        if (!Escena.camiones.some(o => o !== bloqueo && o.malla && huellasCamion(bloqueo.malla, o.malla, [rp.x, rp.y, bloqueo.malla.rotation.y]))){
+          bm.prog = pr; bloqueo.malla.position.x = rp.x; bloqueo.malla.position.z = rp.y; retrocesosCamion++;
+        }
+      }
+    }
+    if (c.ignorar && (!c.ignorar.malla || c.ignorar.malla.position.distanceTo(c.malla.position) > 14)) c.ignorar = null;
   }
-  // Último recurso, para saturación a 60x: si dos huellas reales se cruzan, el de mayor índice se oculta hasta separarse.
-  const vis = Escena.camiones.filter(c => c.malla);
-  vis.forEach((c, i) => {
-    const tapa = vis.some((o, j) => j < i && o.malla.visible && huellasCamion(c.malla, o.malla));
-    if (tapa && c.malla.visible) ocultadosCamion++;
-    c.malla.visible = !tapa;
-  });
   const cerca = Escena.camiones.some(c => c.malla && c.malla.position.x > -58 && c.malla.position.x < -42 && Math.abs(c.malla.position.z) < 10);
   const obj = cerca ? -Math.PI / 2.2 : 0;
   barrera.rotation.x += (obj - barrera.rotation.x) * 0.14;
@@ -3263,6 +3288,12 @@ function aplicarAjuste(id){
 }
 
 $("bAj").onclick = () => $("popAjustes").classList.toggle("open");
+$("semilla").onchange = e => {
+  const v = e.target.value.trim(), n = parseInt(v, 10);
+  SEMILLA = v === "" || Number.isNaN(n) ? null : n >>> 0;
+  resetSim(); drawPanel(); actualizarResumenPlanta();
+  mostrarToast(SEMILLA === null ? "Sin semilla: cada corrida es distinta." : "Semilla " + SEMILLA + ": la corrida se reinició y se puede repetir.");
+};
 $("bPa").onclick = e => { paused = !paused; e.target.textContent = paused ? "Reanudar" : "Pausa"; };
 document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
   sp = +b.dataset.s;
