@@ -361,6 +361,38 @@ const LINEAS = [
 
 // Áreas en coordenadas XZ dentro de la nave [x0, z0, x1, z1].
 // Nave principal: x in [14, 80], z in [-21, 21]; pasillo central z in [-3, 3].
+// Parámetros propios de cada distribución, iniciados para que todas tengan la media y la desviación base.
+// Lognormal: μ y σ del logaritmo del tiempo (convención de numpy.random.lognormal).
+function parInicial(m, s){
+  const q = Math.log(1 + (s / m) ** 2);
+  return {
+    nor:{ mu:m, sd:s },
+    tri:{ min:Math.max(0.1, m - Math.sqrt(6) * s), moda:m, max:m + Math.sqrt(6) * s },
+    log:{ mu:Math.log(m) - q / 2, sd:Math.sqrt(q) },
+    exp:{ media:m },
+    uni:{ a:Math.max(0.1, m - Math.sqrt(3) * s), b:m + Math.sqrt(3) * s }
+  };
+}
+// Media y desviación teóricas de la distribución elegida (alimentan el Excel y los resúmenes).
+function momentos(d, p){
+  if (d === "nor") return [p.mu, p.sd];
+  if (d === "tri"){ const { min:a, moda:c, max:b } = p; return [(a + b + c) / 3, Math.sqrt((a * a + b * b + c * c - a * b - a * c - b * c) / 18)]; }
+  if (d === "log") return [Math.exp(p.mu + p.sd ** 2 / 2), Math.sqrt((Math.exp(p.sd ** 2) - 1) * Math.exp(2 * p.mu + p.sd ** 2))];
+  if (d === "exp") return [p.media, p.media];
+  if (d === "uni") return [(p.a + p.b) / 2, (p.b - p.a) / Math.sqrt(12)];
+  return null;
+}
+// Valida los parámetros; devuelve el texto del error o "" si están bien.
+function errorParametros(d, p){
+  const ok = v => Number.isFinite(v);
+  if (d === "nor") return !ok(p.mu) || p.mu <= 0 ? "La media debe ser mayor que 0." : (!ok(p.sd) || p.sd <= 0 ? "La desviación debe ser mayor que 0." : "");
+  if (d === "tri") return ![p.min, p.moda, p.max].every(ok) || p.min < 0 ? "El mínimo no puede ser negativo." : (!(p.min <= p.moda && p.moda <= p.max && p.min < p.max) ? "Debe cumplirse mínimo ≤ moda ≤ máximo, con mínimo < máximo." : "");
+  if (d === "log") return !ok(p.mu) ? "μ debe ser un número." : (!ok(p.sd) || p.sd <= 0 ? "σ debe ser mayor que 0." : "");
+  if (d === "exp") return !ok(p.media) || p.media <= 0 ? "La media (1/λ) debe ser mayor que 0." : "";
+  if (d === "uni") return ![p.a, p.b].every(ok) || p.a < 0 ? "a no puede ser negativo." : (p.b <= p.a ? "b debe ser mayor que a." : "");
+  return "";
+}
+
 const AR_BASE = [
   { n:"Recepción y dispersión",       r:[54,-21,67,-3],  k:0x2fb5d6, lam:0.80, mu:2.00, sd:0.40, c:2, pf:0.02, nx:[[1,1]] },
   { n:"Molienda y tinteo",            r:[67,-21,80,-3],  k:0x7a8cff, lam:null, mu:2.60, sd:0.50, c:3, pf:0.03, nx:[[2,1]] },
@@ -373,7 +405,7 @@ const AR_BASE = [
   { n:"Oficinas (pedidos)",           r:[41,-21,54,-3],  k:0xc9a77c, lam:0.35, mu:2.40, sd:0.50, c:2, pf:0.00, nx:[] }
 ];
 
-const AR = AR_BASE.map(a => Object.assign({}, a, { dist:"nor", emp:null, empCol:null }));
+const AR = AR_BASE.map(a => Object.assign({}, a, { dist:"nor", emp:null, empCol:null, par:parInicial(a.mu, a.sd) }));
 
 const AJUSTES_RAPIDOS = [
   { id:0, nombre:"Línea base (estándar)", desc:"Operación normal: 2 andenes activos, 1 montacargas y 6 paletas por camión.",
@@ -668,48 +700,37 @@ const up = i => {
 };
 
 function smpl(a){
-  const m = a.mu, s = Math.max(0, a.sd), d = a.dist || "nor";
-  let v = m;
-  if (d === "tri"){
-    const h = Math.sqrt(6) * s, u = R();
-    const lo = Math.max(0.1, m - h), hi = m + h, F = (m - lo) / (hi - lo || 1);
-    v = u < F ? lo + Math.sqrt(u * (hi - lo) * (m - lo)) : hi - Math.sqrt((1 - u) * (hi - lo) * (hi - m));
-  } else if (d === "log"){
-    const q = Math.log(1 + (s / Math.max(m, 0.1)) ** 2);
-    v = Math.exp(Math.log(Math.max(m, 0.1)) - q / 2 + Math.sqrt(q) * rn());
-  } else if (d === "exp"){
-    v = -m * Math.log(1 - Math.min(0.999999, R()));
-  } else if (d === "uni"){
-    const h = Math.sqrt(3) * s;
-    v = Math.max(0.1, m - h) + (m + h - Math.max(0.1, m - h)) * R();
-  } else if (d === "emp" && a.emp && a.emp.length){
+  const d = a.dist || "nor", p = a.par[d];
+  let v;
+  if (d === "emp" && a.emp && a.emp.length){
     v = a.emp[Math.floor(R() * a.emp.length)];
+  } else if (d === "tri"){
+    const { min:lo, moda:c, max:hi } = p, u = R(), F = (c - lo) / (hi - lo);
+    v = u < F ? lo + Math.sqrt(u * (hi - lo) * (c - lo)) : hi - Math.sqrt((1 - u) * (hi - lo) * (hi - c));
+  } else if (d === "log"){
+    v = Math.exp(p.mu + p.sd * rn());
+  } else if (d === "exp"){
+    v = -p.media * Math.log(1 - Math.min(0.999999, R()));
+  } else if (d === "uni"){
+    v = p.a + (p.b - p.a) * R();
   } else {
-    v = m + s * rn();
+    const q = a.par.nor;
+    v = q.mu + q.sd * rn();
   }
   return Math.max(0.15, v);
 }
 
 function pdfOf(a){
-  const m = a.mu, s = a.sd, d = a.dist || "nor";
-  if (d === "emp") return null;
-  if (d === "exp") return m > 0 ? (v => v < 0 ? 0 : Math.exp(-v / m) / m) : null;
-  if (!(s > 0)) return null;
+  const d = a.dist || "nor", p = a.par[d];
+  if (d === "emp" || errorParametros(d, p)) return null;
+  if (d === "exp") return v => v < 0 ? 0 : Math.exp(-v / p.media) / p.media;
   if (d === "tri"){
-    const h = Math.sqrt(6) * s, lo = Math.max(0.1, m - h), hi = m + h;
-    if (hi <= lo || m <= lo) return null;
-    return v => (v < lo || v > hi) ? 0 : (v < m ? 2 * (v - lo) / ((hi - lo) * (m - lo)) : 2 * (hi - v) / ((hi - lo) * (hi - m)));
+    const { min:lo, moda:c, max:hi } = p;
+    return v => (v < lo || v > hi) ? 0 : (v < c ? 2 * (v - lo) / ((hi - lo) * (c - lo || 1e-9)) : 2 * (hi - v) / ((hi - lo) * (hi - c || 1e-9)));
   }
-  if (d === "log"){
-    const q = Math.log(1 + (s / Math.max(m, 0.1)) ** 2), u = Math.log(Math.max(m, 0.1)) - q / 2, g = Math.sqrt(q);
-    if (!(g > 0)) return null;
-    return v => v <= 0 ? 0 : Math.exp(-0.5 * ((Math.log(v) - u) / g) ** 2) / (v * g * 2.506628);
-  }
-  if (d === "uni"){
-    const h = Math.sqrt(3) * s, lo = Math.max(0.1, m - h), hi = m + h;
-    return v => (v >= lo && v <= hi) ? 1 / (hi - lo) : 0;
-  }
-  return v => Math.exp(-0.5 * ((v - m) / s) ** 2) / (s * 2.506628);
+  if (d === "log") return v => v <= 0 ? 0 : Math.exp(-0.5 * ((Math.log(v) - p.mu) / p.sd) ** 2) / (v * p.sd * 2.506628);
+  if (d === "uni") return v => (v >= p.a && v <= p.b) ? 1 / (p.b - p.a) : 0;
+  return v => Math.exp(-0.5 * ((v - p.mu) / p.sd) ** 2) / (p.sd * 2.506628);
 }
 
 function src(i){
@@ -1076,7 +1097,7 @@ G.background = (() => {
   g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
   return new THREE.CanvasTexture(c);
 })();
-G.fog = new THREE.Fog(HORIZONTE, 200, 560);
+G.fog = new THREE.Fog(HORIZONTE, 170, 540);
 
 const cam = new THREE.PerspectiveCamera(48, 1, 0.2, 650);
 cam.rotation.order = "YXZ";
@@ -1142,7 +1163,7 @@ const TX = {
     ruido(g, 9000, n, ["#3a3e42", "#50555a", "#5c6166", "#32363a"], 1.6);
     g.globalAlpha = 0.18; ruido(g, 30, n, ["#2c3034", "#5a5f63"], 40); g.globalAlpha = 1;
   }),
-  pasto: texCanvas(256, 90, 72, (g, n) => {
+  pasto: texCanvas(256, 640, 640, (g, n) => {
     g.fillStyle = "#6a7f4a"; g.fillRect(0, 0, n, n);
     for (let i = 0; i < 2600; i++){
       g.strokeStyle = ["#5d7340", "#788d55", "#667c47", "#83955c", "#56693b"][(PRNG() * 5) | 0];
@@ -1156,6 +1177,9 @@ const TX = {
       const l = 34 + v * 18;
       g.fillStyle = "hsl(8,38%," + l + "%)"; g.fillRect(x, 0, 1, n);
     }
+  }),
+  chapaGris: texCanvas(128, 22, 1, (g, n) => {
+    for (let x = 0; x < n; x++){ const v = 0.5 + 0.5 * Math.cos(x / n * Math.PI * 2 * 4); g.fillStyle = "hsl(205,6%," + (58 + v * 16) + "%)"; g.fillRect(x, 0, 1, n); }
   }),
   epoxi: texCanvas(256, 4, 4, (g, n) => {
     g.fillStyle = "#ffffff"; g.fillRect(0, 0, n, n);
@@ -1239,13 +1263,13 @@ function inst(geo, mat, x, y, z, sx, sy, sz, rx, ry, rz){
 }
 const IB = (w, h, d, mat, x, y, z, ry) => inst(GEO_CAJA, usar(mat), x, y, z, w, h, d, 0, ry);
 const IY = (r, h, mat, x, y, z, rx, rz) => inst(GEO_CIL, usar(mat), x, y, z, r, h, r, rx, 0, rz);
-function volcarInstancias(){
+function volcarInstancias(padre){
   _inst.forEach(({ geo, mat, ms }) => {
     const im = new THREE.InstancedMesh(geo, mat, ms.length);
     ms.forEach((m, i) => im.setMatrixAt(i, m));
     im.castShadow = im.receiveShadow = true;
     im.frustumCulled = false; // la esfera envolvente de la geometría unitaria no cubre las instancias
-    G.add(im);
+    (padre || G).add(im);
   });
   _inst.clear();
 }
@@ -1281,168 +1305,6 @@ function sgn(txt, x, y, z, w, ry, flat, bgHex, fgHex){
   G.add(m);
   return m;
 }
-
-// ---------- Terreno, vialidad exterior, caseta, parqueo 8 lugares, báscula y andenes ----------
-B(420, 0.3, 340, MAT.pasto, 10, -0.25, 0, G, false); // césped exterior
-B(106, 0.08, 86, MAT.asfalto, -38, -0.02, -4, G, false); // patio asfaltado de camiones
-B(106.6, 0.14, 0.3, 0xa3a6a2, -38, 0.02, 39.15, G, false); B(106.6, 0.14, 0.3, 0xa3a6a2, -38, 0.02, -47.15, G, false); // cordones
-
-// Carriles exteriores amarillos (entrada, transversal y salida por báscula)
-const lineaPiso = (w, d, x, z, c) => {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), M(c || 0xd8b93a, { roughness:0.6 }));
-  m.rotation.x = -Math.PI / 2;
-  m.position.set(x, 0.03, z);
-  G.add(m);
-};
-lineaPiso(80, 0.35, -40, 4.4); lineaPiso(80, 0.35, -40, -4.4);
-lineaPiso(80, 0.35, -40, -25.6); lineaPiso(80, 0.35, -40, -34.4);
-sgn("▲ LLEGADA", -65, 0.05, 0, 9, Math.PI / 2, true, "none", "#e9ecef");
-sgn("▼ SALIDA", -65, 0.05, -30, 9, Math.PI / 2, true, "none", "#e9ecef");
-sgn("ZONA DE CARGA", 4, 0.05, -18, 11, Math.PI / 2, true, "none", "#f2c230");
-
-// Caseta y barrera en x = -48
-B(6, 5, 6, 0x9aa4b0, -48, 2.5, 9);
-B(7, 0.4, 7, 0x6e7681, -48, 5.1, 9);
-B(5.4, 2.0, 0.25, 0x9fd3e6, -48, 3.1, 5.9);
-B(0.7, 3.4, 0.7, 0xc0392b, -48, 1.7, 3.6);
-const barrera = new THREE.Group();
-const brazoBar = B(0.32, 0.32, 9.2, 0xe8e8e8, 0, 0, -4.5, barrera);
-for (let k = 1; k < 5; k++) B(0.36, 0.36, 1.0, 0xc0392b, 0, 0, -0.9 - k * 1.9, barrera);
-barrera.position.set(-48, 3.1, 3.6);
-G.add(barrera);
-
-// Parqueo de 8 lugares numerados
-const slotsPatio = [];
-(function buildParqueo(){
-  let n = 0;
-  for (const z of [11, -11]){
-    for (const x of [-38, -31, -24, -17]){
-      lineaPiso(0.22, 8.2, x - 2.1, z, 0xc8d0d8);
-      lineaPiso(0.22, 8.2, x + 2.1, z, 0xc8d0d8);
-      lineaPiso(4.4, 0.22, x, z - 4.1, 0xc8d0d8);
-      slotsPatio.push({ x, z, libre:true, n:++n });
-      const cvN = document.createElement("canvas"); cvN.width = cvN.height = 128;
-      const gx = cvN.getContext("2d");
-      gx.fillStyle = "#c8d0d8"; gx.font = "bold 90px sans-serif"; gx.textAlign = "center"; gx.textBaseline = "middle";
-      gx.fillText(String(n), 64, 68);
-      const pm = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.1), new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(cvN), transparent:true }));
-      pm.rotation.x = -Math.PI / 2; pm.position.set(x, 0.04, z + 3.0); G.add(pm);
-    }
-  }
-})();
-
-// Báscula de salida en (-14, -30)
-B(9, 0.4, 7.6, 0x6e7681, -14, 0.2, -30);
-B(0.55, 4.4, 0.55, 0x9aa4b0, -14, 2.2, -25.2);
-sgn("BÁSCULA · SALIDA", -14, 5.1, -25.2, 11, 0, false, "#161b22", "#3fb950");
-
-// 3 Andenes exteriores en x = 8, DOCK_Z = [12, 0, -12]
-const DOCK_Z = [12, 0, -12];
-const anden3Piezas = [];
-const cintasAnden = [];
-DOCK_Z.forEach((z, idx) => {
-  const arrP = [];
-  arrP.push(B(8.4, 1.4, 9.6, 0x8a929c, 10.2, 0.7, z));
-  arrP.push(B(0.6, 0.9, 1.3, 0x22262b, 6.1, 1.25, z + 3.2));
-  arrP.push(B(0.6, 0.9, 1.3, 0x22262b, 6.1, 1.25, z - 3.2));
-  arrP.push(sgn("ANDÉN " + (idx + 1), 10.2, 2.6, z + 5.2, 6.6, 0, false, "#161b22", "#e6edf3"));
-  if (idx === 2) anden3Piezas.push(...arrP);
-
-  const cinta = new THREE.Group();
-  for (let k = 0; k < 4; k++) B(0.3, 0.5, 9.0, k % 2 ? 0xe3b341 : 0x22262b, 5.9, 1.8 + k * 0.6, z, cinta);
-  cinta.visible = false;
-  G.add(cinta);
-  cintasAnden.push(cinta);
-});
-
-// ---------- Nave principal de 9 áreas (x in [14, 80], z in [-21, 21]) ----------
-B(66.4, 0.24, 42.4, MAT.hormigon, 47, 0.04, 0, G, false); // losa interior
-
-// Paredes exteriores (oeste x=14 con 3 portones de andén, este x=80, norte z=-21, sur z=21)
-B(66.4, 6.4, 0.45, MAT.pared, 47, 3.2, -21);
-B(66.4, 6.4, 0.45, MAT.pared, 47, 3.2, 21);
-B(0.45, 6.4, 42.4, MAT.pared, 80, 3.2, 0);
-[-21.3, 21.3].forEach(z => B(66.6, 0.7, 0.12, 0x5b6670, 47, 0.35, z, G, false)); B(0.12, 0.7, 42.6, 0x5b6670, 80.3, 0.35, 0, G, false); // zócalo
-// Pared oeste dividida para dejar claros los 3 portones de andén (z=12, 0, -12)
-B(0.45, 6.4, 4.5, MAT.pared, 14, 3.2, 18.75);
-B(0.45, 6.4, 3.0, MAT.pared, 14, 3.2, 6.0);
-B(0.45, 6.4, 3.0, MAT.pared, 14, 3.2, -6.0);
-B(0.45, 6.4, 4.5, MAT.pared, 14, 3.2, -18.75);
-DOCK_Z.forEach(z => {
-  B(0.45, 1.8, 9.0, MAT.pared, 14, 5.5, z); // dintel sobre cada andén
-  B(0.2, 4.6, 8.6, 0x2b333b, 14.05, 2.3, z); // cortina enrollable oscura
-});
-
-// Ventanas en paredes norte, sur y este, más puertas ENTRADA y ENTRADA PERSONAL
-for (let i = 0; i < 8; i++){
-  const x = 19 + i * 7.8;
-  [-1, 1].forEach(s => {
-    [21.25, 20.75].forEach(oz => {
-      B(3.0, 1.8, 0.1, 0x9fd3e6, x, 3.7, s * oz);
-      B(3.2, 0.14, 0.18, 0x4b5560, x, 2.75, s * oz);
-    });
-  });
-}
-for (let j = 0; j < 4; j++){
-  const z = -15 + j * 10;
-  if (Math.abs(z) < 3) continue;
-  [80.25, 79.75].forEach(ox => {
-    B(0.1, 1.8, 3.0, 0x9fd3e6, ox, 3.7, z);
-    B(0.18, 0.14, 3.2, 0x4b5560, ox, 2.75, z);
-  });
-}
-// Puerta principal de personal (sur, junto a despacho/almacén) y puerta este
-B(3.2, 3.4, 0.14, 0x1d6b4f, 21, 1.7, 21.25);
-sgn("ENTRADA PERSONAL", 21, 4.4, 21.35, 5, 0);
-B(0.14, 3.4, 3.2, 0x1d6b4f, 80.25, 1.7, 0);
-sgn("ENTRADA", 80.35, 4.4, 0, 4, Math.PI / 2);
-
-// Techo a dos aguas con mojinetes triangulares y cumbrera
-const roof = new THREE.Group();
-G.add(roof);
-const angTecho = Math.atan(4.2 / 21.6), largoFaldon = Math.hypot(21.6, 4.2) + 0.4;
-[-1, 1].forEach(s => {
-  const m = B(67.2, 0.35, largoFaldon, MAT.chapa, 47, 8.5, s * 10.8, roof);
-  m.rotation.x = s * angTecho;
-});
-B(67.2, 0.32, 0.9, 0x6e2f26, 47, 10.65, 0, roof);
-const shMoj = new THREE.Shape();
-shMoj.moveTo(-21, 6.4); shMoj.lineTo(21, 6.4); shMoj.lineTo(0, 10.55);
-[14, 80].forEach(x => {
-  const t = new THREE.Mesh(
-    new THREE.ShapeGeometry(shMoj),
-    M(0xe4e8ea, { side:THREE.DoubleSide })
-  );
-  t.rotation.y = Math.PI / 2;
-  t.position.x = x;
-  roof.add(t);
-});
-
-// Divisores interiores bajos entre áreas (dejando paso libre para la banda z=8..11)
-[28, 41, 54, 67].forEach(x => {
-  B(0.18, 1.2, 18, 0xb8c4cc, x, 0.65, -12);
-  if (x === 54 || x === 67){
-    B(0.18, 1.2, 5, 0xb8c4cc, x, 0.65, 5.5);
-    B(0.18, 1.2, 10, 0xb8c4cc, x, 0.65, 16.0);
-  } else {
-    B(0.18, 1.2, 18, 0xb8c4cc, x, 0.65, 12);
-  }
-});
-
-// Pasillo peatonal verde y vía central de montacargas (x: 26..80, z: -3..3)
-B(54, 0.04, 5.8, M(0x8b9196, { map:TX.epoxi, roughness:0.35 }), 53, 0.14, 0, G, false);
-[-1, 1].forEach(s => {
-  B(54, 0.04, 1.15, M(0x2f8f57, { map:TX.epoxi, roughness:0.3 }), 53, 0.15, s * 2.15, G, false);
-  B(54, 0.04, 0.12, 0xf2c230, 53, 0.16, s * 2.75, G, false);
-  B(54, 0.04, 0.12, 0xf2c230, 53, 0.16, s * 1.55, G, false);
-});
-for (let x = 28; x <= 78; x += 3) B(1.5, 0.03, 0.14, 0xf4f6f7, x, 0.16, 0, G, false);
-sgn("PASILLO PEATONAL", 48, 0.18, 2.15, 4.6, 0, true, "none", "#eef3ef");
-sgn("PASILLO PEATONAL", 62, 0.18, -2.15, 4.6, 0, true, "none", "#eef3ef");
-sgn("VÍA DE MONTACARGAS", 54, 0.18, 0, 6.5, 0, true, "none", "#f2c230");
-
-// ---------- Maquinaria, tableros de control, colas y operarios Lego por área ----------
-const spin = [], Q = [], WS = [], tablerosPiloto = [], floorHitMeshes = [];
 
 // ---------- Modelado: fusión de piezas con color por vértice (una llamada de dibujo por pieza móvil) ----------
 const MAT_VC = MS({ vertexColors:true, roughness:0.6, metalness:0.08 });
@@ -1607,6 +1469,389 @@ function paletaEstatica(x, y, z, colorCarga, alto){ // paleta envuelta en film (
   IB(1.03, alto + 0.02, 1.03, MAT.film, x, y + 0.14 + alto / 2, z);
 }
 
+// ---------- Terreno, vialidad exterior, caseta, parqueo 8 lugares, báscula y andenes ----------
+B(3000, 0.3, 3000, MAT.pasto, 10, -0.25, 0, G, false); // suelo hasta el horizonte (la niebla oculta el borde)
+B(106, 0.08, 86, MAT.asfalto, -38, -0.02, -4, G, false); // patio asfaltado de camiones
+B(106.6, 0.14, 0.3, 0xa3a6a2, -38, 0.02, 39.15, G, false); B(106.6, 0.14, 0.3, 0xa3a6a2, -38, 0.02, -47.15, G, false); // cordones
+
+// Carriles exteriores amarillos (entrada, transversal y salida por báscula)
+const lineaPiso = (w, d, x, z, c) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), M(c || 0xd8b93a, { roughness:0.6 }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x, 0.03, z);
+  G.add(m);
+};
+lineaPiso(80, 0.35, -40, 4.4); lineaPiso(80, 0.35, -40, -4.4);
+lineaPiso(80, 0.35, -40, -25.6); lineaPiso(80, 0.35, -40, -34.4);
+sgn("▲ LLEGADA", -65, 0.05, 0, 9, Math.PI / 2, true, "none", "#e9ecef");
+sgn("▼ SALIDA", -65, 0.05, -30, 9, Math.PI / 2, true, "none", "#e9ecef");
+sgn("ZONA DE CARGA", 4, 0.05, -18, 11, Math.PI / 2, true, "none", "#f2c230");
+
+// Caseta y barrera en x = -48
+B(6, 5, 6, 0x9aa4b0, -48, 2.5, 9);
+B(7, 0.4, 7, 0x6e7681, -48, 5.1, 9);
+B(5.4, 2.0, 0.25, 0x9fd3e6, -48, 3.1, 5.9);
+B(0.2, 1.6, 4.4, 0x9fd3e6, -51.05, 3.1, 9); B(0.2, 1.6, 4.4, 0x9fd3e6, -44.95, 3.1, 9); B(1.0, 2.3, 0.12, 0x5b6670, -46.2, 1.15, 12.05);
+B(0.7, 3.4, 0.7, 0xc0392b, -48, 1.7, 3.6);
+const barrera = new THREE.Group();
+const brazoBar = B(0.32, 0.32, 9.2, 0xe8e8e8, 0, 0, -4.5, barrera);
+for (let k = 1; k < 5; k++) B(0.36, 0.36, 1.0, 0xc0392b, 0, 0, -0.9 - k * 1.9, barrera);
+barrera.position.set(-48, 3.1, 3.6);
+G.add(barrera);
+
+// Parqueo de 8 lugares numerados
+const slotsPatio = [];
+(function buildParqueo(){
+  let n = 0;
+  for (const z of [11, -11]){
+    for (const x of [-38, -31, -24, -17]){
+      lineaPiso(0.22, 8.2, x - 2.1, z, 0xc8d0d8);
+      lineaPiso(0.22, 8.2, x + 2.1, z, 0xc8d0d8);
+      lineaPiso(4.4, 0.22, x, z - 4.1, 0xc8d0d8);
+      slotsPatio.push({ x, z, libre:true, n:++n });
+      const cvN = document.createElement("canvas"); cvN.width = cvN.height = 128;
+      const gx = cvN.getContext("2d");
+      gx.fillStyle = "#c8d0d8"; gx.font = "bold 90px sans-serif"; gx.textAlign = "center"; gx.textBaseline = "middle";
+      gx.fillText(String(n), 64, 68);
+      const pm = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.1), new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(cvN), transparent:true }));
+      pm.rotation.x = -Math.PI / 2; pm.position.set(x, 0.04, z + 3.0); G.add(pm);
+    }
+  }
+})();
+
+// Báscula de salida en (-14, -30)
+B(9, 0.4, 7.6, 0x6e7681, -14, 0.2, -30);
+B(0.55, 4.4, 0.55, 0x9aa4b0, -14, 2.2, -25.2);
+sgn("BÁSCULA · SALIDA", -14, 5.1, -25.2, 11, 0, false, "#161b22", "#3fb950");
+
+// 3 Andenes exteriores en x = 8, DOCK_Z = [12, 0, -12]
+const DOCK_Z = [12, 0, -12];
+const anden3Piezas = [];
+const cintasAnden = [];
+DOCK_Z.forEach((z, idx) => {
+  const arrP = [];
+  arrP.push(B(8.4, 1.4, 9.6, 0x8a929c, 10.2, 0.7, z));
+  arrP.push(B(0.6, 0.9, 1.3, 0x22262b, 6.1, 1.25, z + 3.2));
+  arrP.push(B(0.6, 0.9, 1.3, 0x22262b, 6.1, 1.25, z - 3.2));
+  arrP.push(sgn("ANDÉN " + (idx + 1), 10.2, 2.6, z + 5.2, 6.6, 0, false, "#161b22", "#e6edf3"));
+  if (idx === 2) anden3Piezas.push(...arrP);
+
+  const cinta = new THREE.Group();
+  for (let k = 0; k < 4; k++) B(0.3, 0.5, 9.0, k % 2 ? 0xe3b341 : 0x22262b, 5.9, 1.8 + k * 0.6, z, cinta);
+  cinta.visible = false;
+  G.add(cinta);
+  cintasAnden.push(cinta);
+});
+
+// ---------- Nave principal de 9 áreas (x in [14, 80], z in [-21, 21]) ----------
+B(66.4, 0.24, 42.4, MAT.hormigon, 47, 0.04, 0, G, false); // losa interior
+
+// Paredes exteriores (oeste x=14 con 3 portones de andén, este x=80, norte z=-21, sur z=21)
+B(66.4, 6.4, 0.45, MAT.pared, 47, 3.2, -21);
+B(66.4, 6.4, 0.45, MAT.pared, 47, 3.2, 21);
+B(0.45, 6.4, 42.4, MAT.pared, 80, 3.2, 0);
+[-21.3, 21.3].forEach(z => B(66.6, 0.7, 0.12, 0x5b6670, 47, 0.35, z, G, false)); B(0.12, 0.7, 42.6, 0x5b6670, 80.3, 0.35, 0, G, false); // zócalo
+// Pared oeste dividida para dejar claros los 3 portones de andén (z=12, 0, -12)
+B(0.45, 6.4, 4.5, MAT.pared, 14, 3.2, 18.75);
+B(0.45, 6.4, 3.0, MAT.pared, 14, 3.2, 6.0);
+B(0.45, 6.4, 3.0, MAT.pared, 14, 3.2, -6.0);
+B(0.45, 6.4, 4.5, MAT.pared, 14, 3.2, -18.75);
+const portones = [];
+DOCK_Z.forEach(z => {
+  B(0.45, 1.8, 9.0, MAT.pared, 14, 5.5, z); // dintel sobre cada andén
+  portones.push(B(0.2, 4.6, 8.6, 0x9aa3aa, 14.05, 2.3, z)); // portón seccional (textura más abajo)
+});
+
+// Ventanas en paredes norte, sur y este, más puertas ENTRADA y ENTRADA PERSONAL
+for (let i = 0; i < 8; i++){
+  const x = 19 + i * 7.8;
+  [-1, 1].forEach(s => {
+    [21.25, 20.75].forEach(oz => {
+      B(3.0, 1.8, 0.1, 0x9fd3e6, x, 3.7, s * oz);
+      B(3.2, 0.14, 0.18, 0x4b5560, x, 2.75, s * oz);
+    });
+  });
+}
+for (let j = 0; j < 4; j++){
+  const z = -15 + j * 10;
+  if (Math.abs(z) < 3) continue;
+  [80.25, 79.75].forEach(ox => {
+    B(0.1, 1.8, 3.0, 0x9fd3e6, ox, 3.7, z);
+    B(0.18, 0.14, 3.2, 0x4b5560, ox, 2.75, z);
+  });
+}
+// Puerta principal de personal (sur, junto a despacho/almacén) y puerta este
+B(3.2, 3.4, 0.14, 0x1d6b4f, 21, 1.7, 21.25);
+sgn("ENTRADA PERSONAL", 21, 4.4, 21.35, 5, 0);
+B(0.14, 3.4, 3.2, 0x1d6b4f, 80.25, 1.7, 0);
+sgn("ENTRADA", 80.35, 4.4, 0, 4, Math.PI / 2);
+
+// Techo a dos aguas con mojinetes triangulares y cumbrera
+const roof = new THREE.Group();
+G.add(roof);
+const MAT_CHAPA_INT = MS({ color:0xaab2b8, map:TX.chapaGris, roughness:0.5, metalness:0.55 });
+const angTecho = Math.atan(4.2 / 21.6), largoFaldon = Math.hypot(21.6, 4.2) + 0.4;
+[-1, 1].forEach(s => {
+  const m = B(67.2, 0.35, largoFaldon, MAT.chapa, 47, 8.5, s * 10.8, roof);
+  m.material = [MAT.pintGris, MAT.pintGris, MAT.chapa, MAT_CHAPA_INT, MAT.pintGris, MAT.pintGris]; // cara inferior: chapa galvanizada
+  m.rotation.x = s * angTecho;
+});
+B(67.2, 0.32, 0.9, 0x6e2f26, 47, 10.65, 0, roof);
+const shMoj = new THREE.Shape();
+shMoj.moveTo(-21, 6.4); shMoj.lineTo(21, 6.4); shMoj.lineTo(0, 10.55);
+[14, 80].forEach(x => {
+  const t = new THREE.Mesh(
+    new THREE.ShapeGeometry(shMoj),
+    M(0xe4e8ea, { side:THREE.DoubleSide })
+  );
+  t.rotation.y = Math.PI / 2;
+  t.position.x = x;
+  roof.add(t);
+});
+
+// ---------- Estructura del techo: cerchas y correas (se ocultan con el techo) ----------
+volcarInstancias(); // lo pendiente va a la escena; lo que sigue va al grupo del techo
+const yTecho = z => 10.55 - 4.2 * Math.abs(z) / 21.6;
+for (let x = 17; x <= 77; x += 6){
+  IB(0.14, 0.22, 42.2, MAT.aceroOsc, x, 6.25, 0);
+  [-1, 1].forEach(s => {
+    inst(GEO_CAJA, MAT.aceroOsc, x, 8.1, s * 10.8, 0.14, 0.24, largoFaldon - 0.4, s * angTecho);
+    for (let k = 1; k < 4; k++){
+      const z = s * k * 5.4, h = yTecho(z) - 0.35 - 6.25;
+      IB(0.1, h, 0.1, MAT.aceroOsc, x, 6.25 + h / 2, z);
+      inst(GEO_CAJA, MAT.aceroOsc, x, 6.25 + h / 2, z - s * 2.7, 0.08, Math.hypot(h, 5.4), 0.08, -s * Math.atan2(5.4, h));
+    }
+  });
+}
+for (const z of [-19, -15, -11, -7, -3, 3, 7, 11, 15, 19]) IB(66.4, 0.12, 0.1, MAT.acero, 47, yTecho(z) - 0.32, z);
+for (let x = 20; x <= 74; x += 9){ // extractores eólicos en la cumbrera
+  IY(0.35, 0.5, MAT.acero, x, 10.95, 0);
+  inst(new THREE.SphereGeometry(1, 12, 8), MAT.acero, x, 11.35, 0, 0.5, 0.42, 0.5);
+}
+volcarInstancias(roof);
+
+// ---------- Fachada: pilares, zócalo, canaletas, bajantes, portones seccionales, abrigos de andén, marquesina ----------
+for (let x = 15.1; x < 80; x += 7.8) [-21.35, 21.35].forEach(z => IB(0.6, 6.4, 0.3, 0xc3c9cd, x, 3.2, z));
+[-21.65, 21.65].forEach(z => {
+  IB(66.8, 0.28, 0.32, MAT.aceroOsc, 47, 6.5, z);
+  [16, 47, 78].forEach(x => IY(0.09, 6.4, MAT.aceroOsc, x, 3.2, z + Math.sign(z) * 0.05));
+});
+const TX_PORTON = texCanvas(64, 1, 8, (g, n) => {
+  g.fillStyle = "#9aa3aa"; g.fillRect(0, 0, n, n);
+  g.fillStyle = "#6f777e"; g.fillRect(0, n - 5, n, 5);
+  g.fillStyle = "#b5bdc3"; g.fillRect(0, 0, n, 3);
+});
+const MAT_PORTON = MS({ map:TX_PORTON, roughness:0.45, metalness:0.5 });
+portones.forEach(m => m.material = MAT_PORTON);
+DOCK_Z.forEach(z => {
+  IB(0.7, 5.4, 0.5, MAT.goma, 13.6, 2.7, z + 4.55); IB(0.7, 5.4, 0.5, MAT.goma, 13.6, 2.7, z - 4.55);
+  IB(0.7, 0.7, 9.6, MAT.goma, 13.6, 5.1, z);
+  IB(0.1, 0.2, 0.1, MS({ color:0xfff4c8, emissive:0x887744 }), 13.5, 5.7, z + 3.8); // luz de andén
+});
+B(4.6, 0.22, 2.4, 0xc3c9cd, 21, 3.95, 22.6, G, true); // marquesina de la entrada de personal
+[19.1, 22.9].forEach(x => IY(0.08, 3.9, MAT.aceroOsc, x, 1.95, 23.6));
+
+// Logo de American Chemical en los mojinetes (caso de estudio académico, no es material oficial de la empresa)
+const TX_LOGO = (() => {
+  const c = document.createElement("canvas"); c.width = 1024; c.height = 256;
+  const g = c.getContext("2d");
+  g.fillStyle = "#1f4f9a"; g.beginPath(); g.arc(128, 128, 104, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = "#f2a900"; g.lineWidth = 12; g.beginPath(); g.arc(128, 128, 88, -0.6, 2.2); g.stroke();
+  g.fillStyle = "#ffffff"; g.font = "bold 92px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("AC", 128, 134);
+  g.textAlign = "left"; g.fillStyle = "#1f4f9a"; g.font = "bold 76px sans-serif"; g.fillText("American Chemical", 260, 108);
+  g.fillStyle = "#4b5560"; g.font = "32px sans-serif"; g.fillText("Planta de pinturas · caso de estudio académico", 262, 190);
+  const t = new THREE.CanvasTexture(c); t.anisotropy = ANISO; return t;
+})();
+[[13.72, -Math.PI / 2], [80.28, Math.PI / 2]].forEach(([x, ry]) => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(10.4, 2.6), MS({ map:TX_LOGO, transparent:true, roughness:0.6 }));
+  m.position.set(x, 7.75, 0); m.rotation.y = ry; roof.add(m);
+});
+
+// ---------- Predio: suelo hasta el horizonte, camino, cerco, portón, garita ----------
+const caminoExt = B(14, 0.08, 1400, MAT.asfalto, -97, -0.03, 0, G, false); // ruta pública norte-sur
+caminoExt.material = MS({ color:0x7c7f82, map:TX.asfalto.clone(), roughness:0.9 });
+caminoExt.material.map.repeat.set(3, 300); caminoExt.material.map.needsUpdate = true;
+for (let z = -600; z < 600; z += 8) IB(0.25, 0.02, 3.5, 0xe9ecef, -97, 0.02, z);
+// cerco perimetral de malla olímpica con postes
+const TX_MALLA = texCanvas(64, 1, 1, (g, n) => {
+  g.clearRect(0, 0, n, n); g.strokeStyle = "rgba(200,206,210,.9)"; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(n, n); g.moveTo(n, 0); g.lineTo(0, n); g.stroke();
+});
+const MAT_MALLA = MS({ map:TX_MALLA, transparent:true, alphaTest:0.3, side:THREE.DoubleSide, metalness:0.6, roughness:0.5 });
+function cerco(x0, z0, x1, z1){
+  const L = Math.hypot(x1 - x0, z1 - z0), ry = Math.atan2(x1 - x0, z1 - z0);
+  const t = TX_MALLA.clone(); t.repeat.set(L / 0.5, 5); t.needsUpdate = true;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(L, 2.4), MAT_MALLA.clone());
+  m.material.map = t; m.position.set((x0 + x1) / 2, 1.2, (z0 + z1) / 2); m.rotation.y = ry + Math.PI / 2; G.add(m);
+  for (let k = 0; k <= L; k += 3) IY(0.05, 2.6, MAT.aceroOsc, x0 + (x1 - x0) * k / L, 1.3, z0 + (z1 - z0) * k / L);
+  IY(0.025, L, MAT.aceroOsc, (x0 + x1) / 2, 2.45, (z0 + z1) / 2, Math.PI / 2 * (x0 === x1 ? 1 : 0), x0 === x1 ? 0 : Math.PI / 2);
+}
+cerco(-74, -62, -74, -38); cerco(-74, 8, -74, 62);
+cerco(-74, -62, 100, -62); cerco(-74, 62, 100, 62); cerco(100, -62, 100, 62);
+// portón corredizo (abierto, recogido junto al cerco) y garita de guardia
+IB(0.12, 2.4, 9.0, MAT.pintAmar, -74.5, 1.25, 13);
+[-38, 8].forEach(z => IB(0.5, 3.0, 0.5, 0xc3c9cd, -74, 1.5, z));
+B(3.6, 2.8, 3.2, 0xdfe3e6, -70.5, 1.4, 12.5);
+B(4.4, 0.25, 4.0, 0x2a2e33, -70.5, 2.92, 12.5, G, true);
+IB(0.06, 1.0, 2.6, 0x9fd3e6, -72.33, 1.75, 12.5); IB(2.8, 1.0, 0.06, 0x9fd3e6, -70.5, 1.75, 10.88);
+IB(0.06, 1.0, 1.6, 0x9fd3e6, -68.67, 1.75, 11.8); IB(0.06, 2.1, 0.9, 0x5b6670, -68.67, 1.05, 13.4); IB(2.8, 1.0, 0.06, 0x9fd3e6, -70.5, 1.75, 14.12);
+IB(3.7, 0.35, 0.06, 0x1f4f9a, -70.5, 2.6, 14.13); IB(0.06, 0.35, 3.3, 0x1f4f9a, -68.66, 2.6, 12.5);
+sgn("GARITA · CONTROL DE INGRESO", -72.4, 3.35, 12.5, 4.0, -Math.PI / 2, false, "#1f4f9a", "#ffffff");
+const guardia = persona({ chaleco:0x2b3a55, casco:null });
+guardia.position.set(-71.3, 0, 9.8); guardia.rotation.y = -Math.PI / 2; G.add(guardia);
+
+// marcas de rodadura en los carriles del patio
+const MAT_RODADURA = MS({ color:0x000000, transparent:true, opacity:0.16, depthWrite:false, roughness:1 });
+[[0, -74, -8], [-30, -74, -6]].forEach(([z, xa, xb]) => [-0.95, 0.95].forEach(dz => {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(xb - xa, 0.5), MAT_RODADURA);
+  m.rotation.x = -Math.PI / 2; m.position.set((xa + xb) / 2, 0.035, z + dz); G.add(m);
+}));
+// sardineles pintados (amarillo y negro) en la isla de la báscula y frente a los andenes
+const TX_SARD = texCanvas(64, 10, 1, (g, n) => { g.fillStyle = "#f2c230"; g.fillRect(0, 0, n, n); g.fillStyle = "#1c1f22"; g.fillRect(n / 2, 0, n / 2, n); });
+const MAT_SARD = MS({ map:TX_SARD, roughness:0.7 });
+B(12, 0.25, 0.4, MAT_SARD, -14, 0.12, -34.2, G, false); B(12, 0.25, 0.4, MAT_SARD, -14, 0.12, -25.8, G, false);
+
+// ---------- Veredas y estacionamiento del personal con autos ----------
+B(66.6, 0.12, 2.6, MAT.hormigon, 47, 0.06, 22.9, G, false);
+B(2.6, 0.12, 6, MAT.hormigon, 21, 0.06, 27.0, G, false);
+B(54, 0.08, 18, MAT.asfalto, 49, 0.01, 37, G, false);
+for (let k = 0; k <= 11; k++) [31.5, 42.5].forEach(z => lineaPiso(0.15, 4.6, 25.5 + k * 4.4, z, 0xe9ecef));
+const GEO_AUTO = fundir([
+  [caja(1.8, 0.62, 4.3, 0, 0.62, 0), 0xffffff], [caja(1.62, 0.55, 2.3, 0, 1.2, -0.2), 0x26323c],
+  [caja(1.64, 0.08, 2.2, 0, 1.5, -0.2), 0xffffff],
+  ...[-0.65, 0.65].map(x => [caja(0.32, 0.12, 0.04, x, 0.72, 2.16), 0xfff4c8]),
+  ...[-0.65, 0.65].map(x => [caja(0.32, 0.12, 0.04, x, 0.72, -2.16), 0xb3261e]),
+  ...[[-0.85, 1.35], [0.85, 1.35], [-0.85, -1.35], [0.85, -1.35]].map(([x, z]) => [cil(0.34, 0.34, 0.24, 0, 0, 0, 14).rotateZ(Math.PI / 2).translate(x, 0.34, z), 0x17191c])
+]);
+const COL_AUTOS = [0xd8dde2, 0x2b2f35, 0x8a1c1c, 0x1f4f9a, 0x9aa1a7, 0xf2f2ee, 0x3d5a40, 0x6b6f75];
+const autos = [];
+for (let k = 0; k < 11; k++) [[29.5, 0], [44.5, Math.PI]].forEach(([z, ry], f) => { if ((k * 3 + f * 5) % 7 < 5) autos.push([27.7 + k * 4.4, z, ry]); });
+const imAutos = new THREE.InstancedMesh(GEO_AUTO, MAT_VC_MET, autos.length);
+autos.forEach(([x, z, ry], k) => {
+  _o3.position.set(x, 0, z); _o3.rotation.set(0, ry, 0); _o3.scale.set(1, 1, 1); _o3.updateMatrix();
+  imAutos.setMatrixAt(k, _o3.matrix); imAutos.setColorAt(k, new THREE.Color(COL_AUTOS[k % COL_AUTOS.length]));
+});
+imAutos.castShadow = imAutos.receiveShadow = true; imAutos.frustumCulled = false; G.add(imAutos);
+sgn("ESTACIONAMIENTO PERSONAL", 49, 2.4, 46.6, 6, Math.PI, false, "#1f4f9a", "#ffffff");
+IY(0.06, 2.2, MAT.aceroOsc, 49, 1.1, 46.7);
+
+// ---------- Instalaciones de la planta de pinturas fuera de la nave ----------
+// Tanques de solventes y resinas en batea de contención
+B(20, 0.3, 11, MAT.hormigon, 35, 0.15, -35, G, false);
+[[-10, 0, 0.25, 11], [10, 0, 0.25, 11]].forEach(([dx, dz, w, d]) => IB(w, 1.1, d, 0xb9bcb8, 35 + dx, 0.55, -35 + dz));
+[-5.5, 5.5].forEach(dz => IB(20, 1.1, 0.25, 0xb9bcb8, 35, 0.55, -35 + dz));
+[29, 35, 41].forEach(x => tanque(x, -36, 1.7, 4.4));
+sgn("SOLVENTES Y RESINAS · INFLAMABLE", 35, 1.5, -29.35, 7, 0, false, "#c0392b", "#ffffff");
+// Sector de residuos con contenedores y depósito de tambores techado
+B(12, 0.15, 6, MAT.hormigon, 57, 0.08, -33, G, false);
+[[0x2c7a43, "RECICLABLES"], [0xc0392b, "PELIGROSOS"], [0xe0a91b, "SOLVENTES"]].forEach(([c, t], k) => {
+  B(2.6, 1.5, 1.7, MS({ color:c, roughness:0.5, metalness:0.3 }), 53 + k * 3.8, 0.9, -33.5, G, true);
+  sgn(t, 53 + k * 3.8, 1.0, -32.6, 2.2, 0, false, "#f4f6f8", "#1c2a36");
+});
+B(12, 0.15, 7, MAT.hormigon, 72, 0.08, -34, G, false);
+[[66.5, -37], [77.5, -37], [66.5, -31], [77.5, -31]].forEach(([x, z]) => IB(0.25, 3.6, 0.25, MAT.aceroOsc, x, 1.8, z));
+B(12.4, 0.2, 7.4, MAT.chapa, 72, 3.7, -34, G, true);
+for (let k = 0; k < 24; k++) inst(GEO_CIL, M([0x1f4f9a, 0x3a3f45, 0xc0392b][k % 3], { metalness:0.4, roughness:0.45 }), 67.6 + (k % 8) * 1.3, 0.6, -36 + Math.floor(k / 8) * 1.4, 0.32, 0.88, 0.32);
+sgn("DEPÓSITO DE TAMBORES", 72, 4.1, -30.25, 6, 0, false, "#1c2a36", "#f4f6f8");
+// Subestación con transformador
+B(8, 0.2, 7, MAT.hormigon, 90, 0.1, -36, G, false);
+cerco(86, -39.5, 94, -39.5); cerco(86, -32.5, 94, -32.5); cerco(86, -39.5, 86, -32.5); cerco(94, -39.5, 94, -32.5);
+B(2.4, 2.2, 1.8, MS({ color:0x7f8c8d, roughness:0.5, metalness:0.5 }), 90, 1.3, -36, G, true);
+for (let k = 0; k < 7; k++) IB(0.06, 1.6, 2.2, MAT.aceroOsc, 88.6 + k * 0.05 * 0 + (k < 4 ? 0 : 2.8), 1.2, -36 + (k % 4 - 1.5) * 0.4);
+[89.4, 90.6].forEach(x => IY(0.12, 0.7, MS({ color:0x9b6a3c, roughness:0.4 }), x, 2.7, -36));
+[86.5, 93.5].forEach(x => { IY(0.16, 9, 0x8d8a83, x, 4.5, -36); IB(2.0, 0.15, 0.15, MAT.aceroOsc, x, 8.6, -36); });
+sgn("PELIGRO · ALTA TENSIÓN", 90, 1.6, -32.4, 3.4, 0, false, "#f2c230", "#1c1f22");
+// Tanque de agua contra incendio y caseta de bombas
+Y(4.5, 9, MS({ color:0xb02a2a, roughness:0.45, metalness:0.3 }), 90, 4.5, 30, G, 32);
+IY(4.55, 0.6, MAT.blanco, 90, 7.0, 30);
+const cono = malla(new THREE.ConeGeometry(4.6, 1.2, 32), MS({ color:0x8a1f1f, roughness:0.5 }), G); cono.position.set(90, 9.6, 30);
+escalerilla(90, 34.65, 9.3);
+B(4, 2.6, 3, 0xdfe3e6, 90, 1.3, 38, G, true);
+sgn("RED CONTRA INCENDIO", 90, 1.9, 39.55, 3.4, 0, false, "#b02a2a", "#ffffff");
+
+// ---------- Árboles, postes de luz y señales ----------
+const arboles = [];
+for (let x = -68; x < 98; x += 9){ arboles.push([x, -58.5]); if (x > 0 || x < -80) arboles.push([x, 58.5]); }
+for (let z = -50; z < 58; z += 9) arboles.push([96.5, z]);
+for (let x = 24; x < 76; x += 6) arboles.push([x, 48.5]);
+for (let x = -60; x < 0; x += 10) arboles.push([x, 58.5]);
+for (let k = 0; k < 160; k++){ // arboleda fuera del predio para cortar el horizonte
+  const a = PRNG() * Math.PI * 2, r = 120 + PRNG() * 160;
+  const x = 10 + Math.cos(a) * r, z = Math.sin(a) * r;
+  if (Math.abs(x + 97) > 10) arboles.push([x, z]);
+}
+const imTronco = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.24, 1, 7), MS({ color:0x5a4330, roughness:0.9 }), arboles.length);
+const imCopa = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), MS({ color:0xffffff, roughness:0.85, flatShading:true }), arboles.length);
+const _cCopa = new THREE.Color();
+arboles.forEach(([x, z], k) => {
+  const h = 2.2 + PRNG() * 1.6, r = 1.6 + PRNG() * 1.3;
+  _o3.position.set(x, h / 2, z); _o3.rotation.set(0, 0, 0); _o3.scale.set(1, h, 1); _o3.updateMatrix(); imTronco.setMatrixAt(k, _o3.matrix);
+  _o3.position.set(x, h + r * 0.6, z); _o3.rotation.set(0, PRNG() * 3, 0); _o3.scale.set(r, r * (0.8 + PRNG() * 0.4), r); _o3.updateMatrix(); imCopa.setMatrixAt(k, _o3.matrix);
+  imCopa.setColorAt(k, _cCopa.setHSL(0.25 + PRNG() * 0.07, 0.35 + PRNG() * 0.15, 0.24 + PRNG() * 0.1));
+});
+[imTronco, imCopa].forEach(m => { m.castShadow = m.receiveShadow = true; m.frustumCulled = false; G.add(m); });
+// postes de alumbrado
+[[-60, 20], [-40, 20], [-20, 20], [-60, -40], [-40, -40], [-20, -40], [0, 30], [0, -40], [30, 48], [50, 48], [70, 48], [100 - 6, 0], [-70, -10]].forEach(([x, z]) => {
+  IY(0.12, 8, MAT.aceroOsc, x, 4, z);
+  IB(1.6, 0.1, 0.12, MAT.aceroOsc, x + 0.7, 7.9, z);
+  IB(0.6, 0.15, 0.3, MS({ color:0xeeeeee, emissive:0x333322, roughness:0.3 }), x + 1.4, 7.82, z);
+});
+// señales viales
+function senal(txt, x, z, ry, fondo){
+  IY(0.05, 2.3, MAT.aceroOsc, x, 1.15, z);
+  const c = document.createElement("canvas"); c.width = c.height = 128;
+  const g = c.getContext("2d");
+  g.fillStyle = fondo; g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = "#ffffff"; g.lineWidth = 6; g.stroke();
+  g.fillStyle = "#ffffff"; g.font = "bold " + (txt.length > 3 ? 34 : 54) + "px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(txt, 64, 66);
+  const m = new THREE.Mesh(new THREE.CircleGeometry(0.45, 24), new THREE.MeshBasicMaterial({ map:new THREE.CanvasTexture(c), toneMapped:false }));
+  m.position.set(x, 2.5, z); m.rotation.y = ry; G.add(m);
+  const dorso = new THREE.Mesh(m.geometry, MAT.aceroOsc); dorso.position.set(x - Math.sin(ry) * 0.01, 2.5, z - Math.cos(ry) * 0.01); dorso.rotation.y = ry + Math.PI; G.add(dorso);
+}
+senal("PARE", -50, -6, -Math.PI / 2, "#c0392b");
+senal("10", -70, -6, -Math.PI / 2, "#c0392b");
+senal("PARE", -20, -26, Math.PI / 2, "#c0392b");
+senal("10", 0, 26, Math.PI, "#c0392b");
+
+// ---------- Fondo: naves vecinas y serranía baja, fundidas por la niebla ----------
+[[-200, -160, 50, 30], [-230, 120, 70, 35], [230, -150, 60, 40], [260, 140, 80, 30], [120, 250, 60, 30], [-60, -260, 90, 40], [40, -240, 50, 28]].forEach(([x, z, w, d]) => {
+  B(w, 9, d, 0xc9ced2, x, 4.5, z, G, false);
+  B(w + 1, 0.6, d + 1, 0x8a9096, x, 9.2, z, G, false);
+});
+const MAT_CERRO = MS({ color:0x4f6148, roughness:1, flatShading:true });
+for (let k = 0; k < 14; k++){
+  const a = k / 14 * Math.PI * 2 + 0.2, r = 330 + (k % 3) * 30;
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), MAT_CERRO);
+  m.scale.set(150 + (k % 4) * 40, 9 + (k * 7 % 5) * 4, 60); m.position.set(10 + Math.cos(a) * r, -2, Math.sin(a) * r); m.rotation.y = -a;
+  G.add(m);
+}
+
+// Divisores interiores bajos entre áreas (dejando paso libre para la banda z=8..11)
+[28, 41, 54, 67].forEach(x => {
+  B(0.18, 1.2, 18, 0xb8c4cc, x, 0.65, -12);
+  if (x === 54 || x === 67){
+    B(0.18, 1.2, 5, 0xb8c4cc, x, 0.65, 5.5);
+    B(0.18, 1.2, 10, 0xb8c4cc, x, 0.65, 16.0);
+  } else {
+    B(0.18, 1.2, 18, 0xb8c4cc, x, 0.65, 12);
+  }
+});
+
+// Pasillo peatonal verde y vía central de montacargas (x: 26..80, z: -3..3)
+B(54, 0.04, 5.8, M(0x8b9196, { map:TX.epoxi, roughness:0.35 }), 53, 0.14, 0, G, false);
+[-1, 1].forEach(s => {
+  B(54, 0.04, 1.15, M(0x2f8f57, { map:TX.epoxi, roughness:0.3 }), 53, 0.15, s * 2.15, G, false);
+  B(54, 0.04, 0.12, 0xf2c230, 53, 0.16, s * 2.75, G, false);
+  B(54, 0.04, 0.12, 0xf2c230, 53, 0.16, s * 1.55, G, false);
+});
+for (let x = 28; x <= 78; x += 3) B(1.5, 0.03, 0.14, 0xf4f6f7, x, 0.16, 0, G, false);
+sgn("PASILLO PEATONAL", 48, 0.18, 2.15, 4.6, 0, true, "none", "#eef3ef");
+sgn("PASILLO PEATONAL", 62, 0.18, -2.15, 4.6, 0, true, "none", "#eef3ef");
+sgn("VÍA DE MONTACARGAS", 54, 0.18, 0, 6.5, 0, true, "none", "#f2c230");
+
+// ---------- Maquinaria, tableros de control, colas y operarios Lego por área ----------
+const carteles = [], spin = [], Q = [], WS = [], tablerosPiloto = [], floorHitMeshes = [];
+
 function ptsOf(i, j){
   const [x0, z0, x1, z1] = AR[i].r, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
   switch (i){
@@ -1650,7 +1895,7 @@ AR.forEach((a, i) => {
   // Letrero por área
   const zSgn = i === 6 ? -20.5 : (z0 < 0 ? z1 - 0.5 : z0 + 0.5);
   const rySgn = i === 6 ? 0 : (z0 < 0 ? 0 : Math.PI);
-  sgn(a.n, cx, 5.7, zSgn, Math.min(w - 3, 5.5), rySgn, false, "#1c2a36", "#f4f6f8");
+  carteles.push(sgn(a.n, cx, 5.7, zSgn, Math.min(w - 3, 5.5), rySgn, false, "#1c2a36", "#f4f6f8"));
 
   // Tablero de control en cada una de las 9 áreas
   const tx = x1 - 1.3, tz = z0 + 1.4;
@@ -2455,12 +2700,12 @@ function construirPestanaParametros(i){
     ].map(([v, t]) => el("option", { txt:t, attrs:Object.assign({ value:v }, (a.dist || "nor") === v ? { selected:"selected" } : {}) }))
   );
   p0.appendChild(el("div", { cls:"campo" }, el("label", { txt:"Distribución del servicio", attrs:{ for:"sd_" } }), selDist));
+  const bloqueDist = el("div", { cls:"bloqueDist" });
+  p0.appendChild(bloqueDist);
 
   // Campos numéricos en vivo
   const campos = [
     ["lam", "Llegadas externas (lotes/min)", 0.05, 0],
-    ["mu",  "Tiempo medio de servicio (min)", 0.1, 0.15],
-    ["sd",  "Desviación estándar (min)", 0.05, 0],
     ["c",   "Servidores (operarios / equipos)", 1, 1],
     ["pf",  "Probabilidad de falla por lote", 0.01, 0]
   ];
@@ -2480,12 +2725,8 @@ function construirPestanaParametros(i){
       let v = parseFloat(inp.value);
       if (Number.isNaN(v) || v < min) return;
       if (k === "c"){ v = Math.max(1, Math.min(8, Math.round(v))); rw(i); }
-      if (k === "mu"){ v = Math.max(0.15, v); }
       if (k === "pf"){ v = Math.max(0, Math.min(1, v)); }
       a[k] = v;
-      if (k === "mu" && a.dist === "exp" && inputsMap.sd){
-        inputsMap.sd.value = +v.toFixed(3);
-      }
       if (k === "c") go(i);
     };
     p0.appendChild(el("div", { cls:"campo" }, el("label", { txt:label }), inp));
@@ -2504,16 +2745,50 @@ function construirPestanaParametros(i){
     p0.appendChild(el("div", { cls:"campo" }, el("label", { txt:"Paletas por camión (N)" }), inpN));
   }
 
-  const notaExp = el("div", { cls:"nota", id:"notaExp", txt:"En distribución Exponencial la desviación está fijada a σ = μ." });
-  p0.appendChild(notaExp);
-
+  // Parámetros propios de la distribución elegida (se rehace al cambiar de distribución)
+  const DEF_PAR = {
+    nor:[["mu", "Media μ (min)"], ["sd", "Desviación σ (min)"]],
+    tri:[["min", "Mínimo a (min)"], ["moda", "Moda c (min)"], ["max", "Máximo b (min)"]],
+    log:[["mu", "μ del logaritmo"], ["sd", "σ del logaritmo"]],
+    exp:[["lam", "Tasa λ (1/min)"], ["media", "Media 1/λ (min)"]],
+    uni:[["a", "Mínimo a (min)"], ["b", "Máximo b (min)"]]
+  };
   function syncExpLock(){
-    const esExp = (a.dist || "nor") === "exp";
-    notaExp.style.display = esExp ? "block" : "none";
-    if (inputsMap.sd){
-      inputsMap.sd.disabled = esExp;
-      inputsMap.sd.value = esExp ? +a.mu.toFixed(3) : +a.sd.toFixed(3);
+    const d = a.dist || "nor";
+    bloqueDist.replaceChildren();
+    const resumen = el("div", { cls:"nota" });
+    const actualizarResumen = borrador => {
+      const err = d === "emp" ? "" : errorParametros(d, borrador || a.par[d]);
+      if (err){ resumen.textContent = "Revise los parámetros: " + err + " La simulación sigue con los últimos válidos."; resumen.style.color = "var(--rojo, #f85149)"; return; }
+      resumen.style.color = "";
+      resumen.textContent = "Media resultante " + a.mu.toFixed(3) + " min · desviación " + a.sd.toFixed(3) + " min" +
+        (d === "exp" ? " (en la exponencial σ = μ)." : d === "log" ? ". μ y σ son del logaritmo del tiempo." : d === "emp" ? " de los datos cargados." : ".");
+    };
+    if (d !== "emp"){
+      const p = Object.assign({}, a.par[d]); // borrador: sólo se aplica si es válido
+      const inps = {};
+      DEF_PAR[d].forEach(([k, lbl]) => {
+        const val = k === "lam" ? 1 / p.media : p[k];
+        const inp = el("input", { attrs:{ type:"number", step:"0.01", value:String(+val.toFixed(4)) } });
+        inps[k] = inp;
+        inp.oninput = () => {
+          const v = parseFloat(inp.value);
+          if (k === "lam"){ p.media = 1 / v; if (v > 0) inps.media.value = +(1 / v).toFixed(4); }
+          else if (k === "media"){ p.media = v; if (v > 0) inps.lam.value = +(1 / v).toFixed(4); }
+          else p[k] = v;
+          if (!errorParametros(d, p)){
+            a.par[d] = Object.assign({}, p);
+            [a.mu, a.sd] = momentos(d, p);
+            if (tab === 1) drawPanel();
+          }
+          actualizarResumen(p);
+        };
+        bloqueDist.appendChild(el("div", { cls:"campo" }, el("label", { txt:lbl }), inp));
+      });
+      [a.mu, a.sd] = momentos(d, a.par[d]);
     }
+    bloqueDist.appendChild(resumen);
+    actualizarResumen();
   }
   syncExpLock();
   selDist.onchange = () => {
@@ -2575,8 +2850,6 @@ function construirPestanaParametros(i){
     a.sd = sdM;
     selDist.value = "emp";
     syncExpLock();
-    if (inputsMap.mu) inputsMap.mu.value = +a.mu.toFixed(3);
-    if (inputsMap.sd) inputsMap.sd.value = +a.sd.toFixed(3);
     estadoCSV.className = "ok";
     estadoCSV.textContent = "Cargados " + vals.length + " valores (" + col.nombre + "): media " + a.mu.toFixed(2) + " min, desv. est. (n−1) " + a.sd.toFixed(2) + " min.";
     if (tab === 1) drawPanel();
@@ -2869,12 +3142,12 @@ function mostrarToast(msg){
 
 // Exportación a Excel (.xlsx de 4 hojas) con ventana de confirmación propia
 function construirWorkbook(){
-  const rows = [["Área", "Distribución", "Media (min)", "Desv. est. (min)", "Servidores", "Llegaron", "Atendidos", "En cola", "Utilización %", "Cola promedio Lq", "Cola máxima", "Espera media Wq (min)", "Servicio medio (min)", "Lotes/h"]];
+  const rows = [["Área", "Distribución", "Parámetros", "Media (min)", "Desv. est. (min)", "Servidores", "Llegaron", "Atendidos", "En cola", "Utilización %", "Cola promedio Lq", "Cola máxima", "Espera media Wq (min)", "Servicio medio (min)", "Lotes/h"]];
   AR.forEach((a, i) => {
     up(i);
     const s = S[i], f = (v, n) => +v.toFixed(n);
     rows.push([
-      a.n, a.dist || "nor", f(a.mu, 3), f(a.dist === "exp" ? a.mu : a.sd, 3), a.c, s.ar, s.dn, s.q.length,
+      a.n, a.dist || "nor", a.dist === "emp" ? (a.emp ? a.emp.length + " datos cargados" : "") : Object.entries(a.par[a.dist || "nor"]).map(([k, v]) => k + "=" + f(v, 4)).join("; "), f(a.mu, 3), f(a.dist === "exp" ? a.mu : a.sd, 3), a.c, s.ar, s.dn, s.q.length,
       T > 0 ? f(100 * s.bi / (a.c * T), 1) : 0,
       T > 0 ? f(s.qi / T, 3) : 0,
       s.mq, f(avg(s.w), 3), f(avg(s.s), 3),
@@ -2963,22 +3236,29 @@ let t0 = performance.now(), acumRes = 0;
 const _rects = [];
 function colocarRotulos(){
   _rects.length = 0;
+  carteles.forEach(c => c.visible = mode === "walk"); // un rótulo por vista: cartel 3D al recorrer, etiqueta desde arriba
   const orden = AR.map((a, i) => i).sort((p, q) => AR[p].c3.distanceToSquared(cam.position) - AR[q].c3.distanceToSquared(cam.position));
   orden.forEach(i => {
     const a = AR[i];
     V.copy(a.c3).project(cam);
-    const near = Math.hypot(a.c3.x - cam.position.x, a.c3.z - cam.position.z) < 24;
-    let show = V.z < 1 && (mode === "walk" ? near : !roofOn);
+    let show = V.z < 1 && mode !== "walk" && !roofOn;
     if (show){
       if (!a.wh){ a.el.style.display = ""; a.wh = [a.el.offsetWidth + 6, a.el.offsetHeight + 4]; }
-      const [w, h] = a.wh, x = (V.x * 0.5 + 0.5) * innerWidth, y0 = (-V.y * 0.5 + 0.5) * innerHeight;
-      const libre = y => !_rects.some(r => Math.abs(r[0] - x) < (r[2] + w) / 2 && Math.abs(r[1] - y) < (r[3] + h) / 2);
-      const y = [y0, y0 - h, y0 + h, y0 - 2 * h, y0 + 2 * h].find(libre);
-      if (y === undefined) show = false;
+      const [w, h] = a.wh, x0 = (V.x * 0.5 + 0.5) * innerWidth, y0 = (-V.y * 0.5 + 0.5) * innerHeight;
+      // candidatos dentro de la proyección del área (nunca fuera de la nave)
+      const [ax0, az0, ax1, az1] = a.r, pts = [[ax0, az0], [ax1, az0], [ax0, az1], [ax1, az1]].map(([px, pz]) => {
+        V.set(px, 0.2, pz).project(cam); return [(V.x * 0.5 + 0.5) * innerWidth, (-V.y * 0.5 + 0.5) * innerHeight];
+      });
+      const ymin = Math.min(...pts.map(q => q[1])) + h / 2, ymax = Math.max(...pts.map(q => q[1])) - h / 2;
+      const libre = ([x, y]) => !_rects.some(r => Math.abs(r[0] - x) < (r[2] + w) / 2 && Math.abs(r[1] - y) < (r[3] + h) / 2);
+      const cand = [[x0, y0]];
+      for (let k = 1; k <= 4; k++) cand.push([x0, y0 - k * h * 0.6], [x0, y0 + k * h * 0.6]);
+      const pos = cand.filter(([, y]) => y >= Math.min(ymin, y0) && y <= Math.max(ymax, y0)).find(libre);
+      if (!pos) show = false;
       else {
-        _rects.push([x, y, w, h]);
-        a.el.style.left = x + "px";
-        a.el.style.top = y + "px";
+        _rects.push([pos[0], pos[1], w, h]);
+        a.el.style.left = pos[0] + "px";
+        a.el.style.top = pos[1] + "px";
       }
     }
     a.el.style.display = show ? "" : "none";
